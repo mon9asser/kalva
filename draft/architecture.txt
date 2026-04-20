@@ -6,8 +6,8 @@ database -> sqlite | SQL | postgres | mongodb
     build -> table queries to insert them to database by acommand
     query -> contains orm and queryBuilder
 middlewares -> contains all middlewares
-model -> model files which connect to query without database ( by developer) handle response and request
-controller -> this contains all files that allow developer to work on ( by developer)
-api -> all apis of framework
-service ->  handle login code
+model -> talk to database - define data shape - return data only
+controller -> read request - call service - return response
+routes -> all apis of framework
+service ->  handle all business logic - not just auth
 view -> blade - react - angular
