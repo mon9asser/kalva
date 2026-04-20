@@ -15,8 +15,8 @@ view -> blade - react - angular
 
 -- user will run this command to install kalva
 ( npm install kalva -g)
-then can install proejct by the below
-( kalva create-project <name>)
+then can install proejct by the gelow 
+( kalva create-project <projectName>)
 * the command will execute the followings:- 
     - Create project folder with name
     - ask user which datbase kind he will work on ( sqlite | SQL | postgres | mongodb )
