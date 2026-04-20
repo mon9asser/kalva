@@ -1,6 +1,6 @@
 
 
-database -> sqlite | SQL | postgres | mongodb
+database -> sqlite | SQL | postgres | mongodb | SQL Server
     data/ -> sqlite (only)
     schema/ -> tables and db connection folder
     build -> table queries to insert them to database by acommand
@@ -11,3 +11,31 @@ controller -> read request - call service - return response
 routes -> all apis of framework
 service ->  handle all business logic - not just auth
 view -> blade - react - angular
+
+
+-- user will run this command to install kalva
+( npm install kalva -g)
+then can install proejct by the below
+( kalva create-project <name>)
+* the command will execute the followings:- 
+    - Create project folder with name
+    - ask user which datbase kind he will work on ( sqlite | SQL | postgres | mongodb )
+        - if it is sqlite location file in the project
+        - if it is other database ask for information about it like the followings
+            DB_TYPE=postgres
+            DB_NAME=mydb
+            DB_PORT=5432
+            DB_USER=postgres
+            DB_PASS=1234
+            * Create .env file with these informations
+    - Ask user which framework for front end to be used inside view folder ( blade - react - angular )
+    - Create package.json for the project <name>
+    - add kalva command to the created package.json to all user do the following
+        - kalva create model <name>
+        - kalva create controller <name>
+        - kalva create service <name>
+        - kalva create table <name>
+        - kalva create resouce <name> => (create all other with one command )
+    - install all depencies in package.json and then run this command to do link for cli (clava)
+    - user can develop over these created files without needing to do functions releate database
+    because the framework alreadyj using ORM and query builder 
