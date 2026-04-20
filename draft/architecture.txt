@@ -1,0 +1,13 @@
+
+
+database -> sqlite | SQL | postgres | mongodb
+    data/ -> sqlite (only)
+    schema/ -> tables and db connection folder
+    build -> table queries to insert them to database by acommand
+    query -> contains orm and queryBuilder
+middlewares -> contains all middlewares
+model -> model files which connect to query without database ( by developer) handle response and request
+controller -> this contains all files that allow developer to work on ( by developer)
+api -> all apis of framework
+service ->  handle login code
+view -> blade - react - angular
