@@ -1,0 +1,15 @@
+{
+  "name": "sqlite-proj",
+  "version": "1.0.0",
+  "description": "sqlite-proj based on Kalva Framework Project",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {},
+  "dependencies": {
+    "sqlite3": "^6.0.1",
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {},
+  "author": "",
+  "license": "MIT"
+}

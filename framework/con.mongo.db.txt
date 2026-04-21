@@ -1,0 +1,68 @@
+const mongoose = require('mongoose');
+const { parsed } = require('dotenv').config();
+
+class Database {
+
+    static instance;
+    static dbInstance;
+
+    constructor() {
+        if (Database.instance) {
+            return Database.instance;
+        }
+
+        Database.instance = this;
+    }
+
+    async init() {
+
+        const settings = {};
+
+        if (parsed?.DATABASE_SERVER_IP) {
+            settings.host = parsed.DATABASE_SERVER_IP;
+        }
+
+        if (parsed?.DATABASE_USER) {
+            settings.user = parsed.DATABASE_USER;
+        }
+
+        if (parsed?.DATABASE_PASSWORD) {
+            settings.password = parsed.DATABASE_PASSWORD;
+        }
+
+        if (parsed?.DATABASE_NAME) {
+            settings.database = parsed.DATABASE_NAME;
+        }
+
+        if (parsed?.DATABASE_PORT) {
+            settings.port = parsed.DATABASE_PORT;
+        }
+
+        let mongoUrl = 'mongodb://';
+
+        if (settings.user && settings.password) {
+            mongoUrl += `${encodeURIComponent(settings.user)}:${encodeURIComponent(settings.password)}@`;
+        }
+
+        mongoUrl += settings.host || '127.0.0.1';
+
+        if (settings.port) {
+            mongoUrl += `:${settings.port}`;
+        }
+ 
+        mongoUrl += `/${settings.database || 'test'}?authSource=admin`;
+        console.log(mongoUrl);
+        Database.dbInstance = await mongoose.connect(mongoUrl);
+    }
+
+    is_connected() {
+        return mongoose.connection.readyState === 1;
+    }
+
+    async query() {
+        throw new Error("MongoDB does not support SQL queries");
+    }
+}
+
+
+module.exports = { Database };

@@ -1,0 +1,74 @@
+const {Pool} = require('pg');
+const {parsed} = require('dotenv').config(); 
+
+class Database {
+
+    static instance;
+    static dbInstance;
+
+    constructor() {
+
+        if (Database.instance) {
+            return Database.instance;
+        } 
+
+        Database.dbInstance = new Pool({
+            host: parsed.DATABASE_HOST,
+            user: parsed.DATABASE_USER,
+            password: parsed.DATABASE_PASSWORD,
+            database: parsed.DATABASE_NAME,
+            port: parsed.DATABASE_PORT,
+            max: 10,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 2000,
+        });
+
+        Database.instance = this;
+        
+    }
+    
+    async is_connected() {
+        try {
+            const client = await Database.dbInstance.connect();
+            await client.query('SELECT 1');
+            client.release();
+
+            return true;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    async query(sql, params = []) {
+        try {
+
+            const isConnected = await this.is_connected();
+            if (!isConnected) {
+                throw new Error("Database connection error");
+            }
+
+            const [rows] = await Database.dbInstance.query(sql, params);
+
+            return {
+                is_error: false,
+                message: "success",
+                data: rows
+            };
+
+        } catch (error) {
+
+            return {
+                is_error: true,
+                message: error.message,
+                data: []
+            };
+
+        } 
+        
+    }
+ 
+
+}
+
+ 
+module.exports = { Database };

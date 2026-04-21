@@ -86,12 +86,14 @@ class RunTime {
                 break;
         }
 
+        // create other dependecies
+        await this.other_dependencies()
+
         // check the drive is already installed on you OS
         var isDriveExists = await this.check_database_version();
 
         if( isDriveExists.is_error ) {
-            console.log('\n', chalk.red.bold(  '🚫' + isDriveExists.message), '\n'); 
-            process.exit(0); 
+            console.log('\n', chalk.red.bold(  '🚫 ' + isDriveExists.message), '\n');  
         }
 
         // Fill database information
@@ -109,9 +111,13 @@ class RunTime {
         this.database_version_command = 'sqlite3 --version';
         this.current_db = 'sqlite';
     }
-  
+    
+    async other_dependencies() { 
+        this.dependencies['dotenv'] = "^17.4.2";
+    }
+    
     async create_mysql(){
-        this.dependencies['mysql2'] = '^2.18.1';
+        this.dependencies['mysql2'] = '^3.22.2';
         this.database_version_command = 'mysql --version';
         this.current_db = 'mysql';
     }
@@ -176,7 +182,7 @@ class RunTime {
         } catch (error) {
             return   {
                 is_error: true,
-                message: `The database driver of ${this.current_db} is not installed in your operating system. Please install then try again.`
+                message: `The database driver of ${this.current_db} is not installed dont forget to install.`
             };
         }
     }

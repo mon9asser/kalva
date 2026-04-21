@@ -1,0 +1,85 @@
+const mysql = require('mysql2');
+const {parsed} = require('dotenv').config(); 
+
+class Database {
+
+    static instance;
+    static dbInstance;
+
+    constructor() {
+
+        if (Database.instance) {
+            return Database.instance;
+        } 
+
+        var settings = {};
+        if(parsed.DATABASE_HOST) {
+            settings.host = parsed.DATABASE_HOST;
+        }
+        if(parsed.DATABASE_USER ) {
+            settings.user = parsed.DATABASE_USER;
+        }
+        if(parsed.DATABASE_PASSWORD) {
+            settings.password = parsed.DATABASE_PASSWORD;
+        }
+        if(parsed.DATABASE_NAME) {
+            settings.database = parsed.DATABASE_NAME;
+        }
+
+        if(parsed.DATABASE_PORT) {
+            settings.port = parsed.DATABASE_PORT;
+        } 
+
+        Database.dbInstance = mysql.createPool(settings); 
+
+        Database.instance = this;
+        
+    }
+    
+    async is_connected() {
+        return new Promise((resolve) => {
+            Database.dbInstance.getConnection((err, connection) => {
+                if (err) {
+                    resolve(false);
+                } else {
+                    connection.release();
+                    resolve(true);
+                }
+            });
+        });
+    }
+
+   async query(sql, params = []) {
+        try {
+
+            const isConnected = await this.is_connected();
+            if (!isConnected) {
+                throw new Error("Database connection error");
+            }
+
+            const [rows] = await Database.dbInstance
+                .promise()
+                .query(sql, params);
+
+            return {
+                is_error: false,
+                message: "success",
+                data: rows
+            };
+
+        } catch (error) {
+
+            return {
+                is_error: true,
+                message: error.message,
+                data: []
+            };
+
+        }
+    }
+ 
+
+}
+  
+
+module.exports = { Database };

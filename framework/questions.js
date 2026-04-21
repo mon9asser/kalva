@@ -4,7 +4,7 @@ var db_questions  = [
         title: 'SQLite',
         questions: [
             {
-                name: 'databas_file',
+                name: 'database_file',
                 title: 'Database File Name',
                 value: 'database.db' // database.db
             }
@@ -15,17 +15,17 @@ var db_questions  = [
         title: 'MySql',
         questions: [
             {
-                name: 'databas_host',
+                name: 'database_host',
                 title: 'Database Host Name',
                 value: 'localhost' 
             },
             {
-                name: 'databas_user',
+                name: 'database_user',
                 title: 'Database User Name',
                 value: 'root' 
             },
             {
-                name: 'databas_password',
+                name: 'database_password',
                 title: 'Database Password',
                 value: '' 
             },
@@ -33,7 +33,13 @@ var db_questions  = [
                 name: 'database_name',
                 title: 'Database Name',
                 value: '' 
-            } 
+            },
+
+            {
+                name: 'database_port',
+                title: 'Database Port',
+                value: 3306 
+            },
         ]
     },
     {
@@ -41,17 +47,17 @@ var db_questions  = [
         title: 'PostGres',
         questions: [
             {
-                name: 'databas_host',
+                name: 'database_host',
                 title: 'Database Host Name',
                 value: 'localhost' 
             },
             {
-                name: 'databas_user',
+                name: 'database_user',
                 title: 'Database User Name',
                 value: 'root' 
             },
             {
-                name: 'databas_password',
+                name: 'database_password',
                 title: 'Database Password',
                 value: '' 
             },
@@ -61,7 +67,7 @@ var db_questions  = [
                 value: '' 
             } ,
             {
-                name: 'databas_port',
+                name: 'database_port',
                 title: 'Database Port',
                 value: 1024
             } 
@@ -77,22 +83,22 @@ var db_questions  = [
                 value: '' 
             },
             {
-                name: 'databas_user',
+                name: 'database_user',
                 title: 'Database User Name',
                 value: '' 
             },
             {
-                name: 'databas_password',
+                name: 'database_password',
                 title: 'Database Password',
                 value: '' 
             },
             {
-                name: 'databas_server_ip',
+                name: 'database_server_ip',
                 title: 'IP',
                 value: '127.0.0.1' 
             },
             {
-                name: 'databas_port',
+                name: 'database_port',
                 title: 'Database port',
                 value: 27017 
             }, 
