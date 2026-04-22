@@ -37,6 +37,13 @@ class RunTime {
             .description('Create a new Kalva project with the given name')
             .action(async (name) => await this.installing(name));
 
+        // => Create Resource 
+        // => Create Schema
+        // => Create Model
+        // => Create Service
+        // => Create Controller 
+        // => Create Api 
+        // => Create View Layer withing the Front-End Framework
         program.parse();
 
     }
