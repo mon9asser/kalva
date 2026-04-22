@@ -2,45 +2,77 @@ const sqlite3 = require('sqlite3').verbose();
 const { parsed } = require('dotenv').config();
 const path = require('path');
 
+/**
+ * Database
+ *
+ * Handles a single SQLite connection using a singleton pattern.
+ * Provides a simple query interface for SELECT and non-SELECT statements.
+ */
 class Database {
 
+    /** @type {Database} Singleton instance */
     static instance;
+
+    /** @type {sqlite3.Database} Active SQLite connection */
     static dbInstance;
 
+     /**
+     * Initialize database connection.
+     * Uses DATABASE_FILE from .env or defaults to "database.sqlite".
+     */
     constructor() {
 
+        // Return existing instance if already created
         if (Database.instance) {
             return Database.instance;
         }
 
+        // Resolve database file path
         const dbPath = parsed?.DATABASE_FILE
             ? path.resolve(parsed.DATABASE_FILE)
             : path.resolve('database.sqlite');
 
+        // Create SQLite connection
         Database.dbInstance = new sqlite3.Database(dbPath, (err) => {
             if (err) {
                 console.error("SQLite connection error:", err.message);
             }
         });
 
+
         Database.instance = this;
     }
 
-    is_connected() {
-        return Database.dbInstance ? true : false;
+    /**
+     * Ensure database connection exists.
+     *
+     * @returns {boolean} true if connected
+     */
+    static is_connected() {
+        if (!Database.instance) {
+            new Database();  
+        }
+        return !!Database.dbInstance;
     }
 
-    async query(sql, params = []) {
-        try {
 
+    static async query(sql, params = []) {
+
+       
+        
+        try {
+            
+            // Ensure connection exists
             if (!this.is_connected()) {
                 throw new Error("Database connection error");
             }
 
+            // Detect query type
             const isSelect = sql.trim().toLowerCase().startsWith('select');
 
             return await new Promise((resolve) => {
 
+                // ── SELECT queries ───────────────────────────────
                 if (isSelect) {
 
                     Database.dbInstance.all(sql, params, (err, rows) => {
@@ -60,7 +92,7 @@ class Database {
                     });
 
                 } else {
-
+                    // ── INSERT / UPDATE / DELETE ────────────────────
                     Database.dbInstance.run(sql, params, function (err) {
                         if (err) {
                             return resolve({

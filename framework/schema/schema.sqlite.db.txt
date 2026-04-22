@@ -257,7 +257,7 @@ class TableBuilder {
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
-class Schema {
+class Schema extends Database {
     /**
      * Define and create a table.
      *
@@ -274,21 +274,34 @@ class Schema {
      *     table.timestamps();
      * });
      */
-    static create(name, callback) {
+    static async create(name, callback) {
         const table = new TableBuilder(name);
         callback(table);
         const sql = table.toSQL();
-        Database.dbInstance.run(sql);
-        return sql;
+        var result = await super.query(
+            sql
+        ); 
+ 
+        if(result.is_error) {
+            result.message = `❗ Error in "${name}" creation: ${result.message}`;
+            return result;
+        }
+
+        result.message = `✔ Table "${name}" created successfully.`;
+
+        return result;
+
     }
 
     /**
      * Drop a table if it exists.
      * @param {string} name
      */
-    static drop(name) {
+    static async drop(name) {
         const sql = `DROP TABLE IF EXISTS "${name}";`;
-        Database.dbInstance.run(sql);
+        await super.query(
+            sql
+        );
         return sql;
     }
 
@@ -298,7 +311,7 @@ class Schema {
      * @returns {boolean}
      */
     static hasTable(name) {
-        const row = Database.dbInstance.get(
+        const row = Database.get(
             `SELECT name FROM sqlite_master WHERE type='table' AND name=?;`,
             [name]
         );
@@ -306,16 +319,134 @@ class Schema {
     }
 }
 
-var query = Schema.create('users', (table) => {
-    table.increments('id');
-    table.string('name').nullable();
-    table.string('email', 100).unique().notNullable();
-    table.integer('age').check('age >= 0').default(0);
-    table.boolean('active').default(1);
-    table.integer('role_id').references('roles', 'id');
-    table.timestamps();
-});
 
-console.log(query);
+/**
+ * Example: Create "users" table with full column and constraint usage
+ *
+ * This example shows most available column types and modifiers.
+ * It demonstrates how to define columns, defaults, constraints, and relations.
+ *
+ * ── Primary Key ─────────────────────────────────────
+ * table.increments('id')
+ * Creates an INTEGER PRIMARY KEY AUTOINCREMENT column.
+ *
+ * ── Basic Columns ───────────────────────────────────
+ * table.string('name', 150).notNullable()
+ * Creates VARCHAR(150) NOT NULL.
+ *
+ * table.string('email', 100).unique().notNullable()
+ * Creates VARCHAR(100) UNIQUE NOT NULL.
+ *
+ * table.text('bio').nullable()
+ * Creates TEXT column that accepts NULL values.
+ *
+ * ── Numeric Columns ─────────────────────────────────
+ * table.integer('age').check('age >= 0').default(0)
+ * Creates INTEGER with CHECK constraint and default value.
+ *
+ * table.float('salary').default(0.0)
+ * Creates FLOAT column with default value.
+ *
+ * table.decimal('balance', 10, 2).default(0)
+ * Creates DECIMAL column. Precision is not enforced by SQLite.
+ *
+ * ── Boolean Column ──────────────────────────────────
+ * table.boolean('is_active').default(1)
+ * Stores boolean as 0 or 1 with default value.
+ *
+ * ── Date and Time Columns ───────────────────────────
+ * table.date('birth_date').nullable()
+ * Stores date as TEXT in format YYYY-MM-DD.
+ *
+ * table.datetime('last_login').default('CURRENT_TIMESTAMP')
+ * Stores date and time. Note: CURRENT_TIMESTAMP is treated as string.
+ *
+ * table.timestamp('created_unix')
+ * Stores Unix timestamp as INTEGER.
+ *
+ * ── Binary Column ───────────────────────────────────
+ * table.blob('avatar')
+ * Stores binary data such as images or files.
+ *
+ * ── Collation ──────────────────────────────────────
+ * table.string('username').collate('NOCASE').unique()
+ * Applies NOCASE collation and UNIQUE constraint.
+ *
+ * ── Foreign Key ─────────────────────────────────────
+ * table.integer('role_id').references('roles', 'id').notNullable()
+ * Creates foreign key reference to roles(id).
+ *
+ * ── Combined Column Constraints ─────────────────────
+ * table.string('code')
+ *     .unique()
+ *     .check("length(code) >= 4")
+ *     .default('USER')
+ * Applies UNIQUE, CHECK, and DEFAULT on same column.
+ *
+ * ── Timestamps Shortcut ─────────────────────────────
+ * table.timestamps()
+ * Adds:
+ *   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+ *   updated_at DATETIME NULL
+ *
+ * ── Composite Constraints ───────────────────────────
+ * table.uniqueComposite('email', 'username')
+ * Creates UNIQUE constraint across multiple columns.
+ *
+ * table.primaryComposite('id', 'role_id')
+ * Creates composite PRIMARY KEY.
+ * Warning: Do not combine with increments() in real schema.
+ *
+ * ── Notes ──────────────────────────────────────────
+ * - SQLite ignores DECIMAL precision and scale.
+ * - CURRENT_TIMESTAMP is inserted as string in this implementation.
+ * - Composite primary key conflicts with auto increment column.
+ *
+ * ── Full Example ───────────────────────────────────
+ *
+ * (async function () {
+ *
+ *   const result = await Schema.create('users', (table) => {
+ *
+ *     table.increments('id');
+ *
+ *     table.string('name', 150).notNullable();
+ *     table.string('email', 100).unique().notNullable();
+ *     table.text('bio').nullable();
+ *
+ *     table.integer('age').check('age >= 0').default(0);
+ *     table.float('salary').default(0.0);
+ *     table.decimal('balance', 10, 2).default(0);
+ *
+ *     table.boolean('is_active').default(1);
+ *
+ *     table.date('birth_date').nullable();
+ *     table.datetime('last_login').default('CURRENT_TIMESTAMP');
+ *     table.timestamp('created_unix');
+ *
+ *     table.blob('avatar');
+ *
+ *     table.string('username').collate('NOCASE').unique();
+ *
+ *     table.integer('role_id')
+ *         .references('roles', 'id')
+ *         .notNullable();
+ *
+ *     table.string('code')
+ *         .unique()
+ *         .check("length(code) >= 4")
+ *         .default('USER');
+ *
+ *     table.timestamps();
+ *
+ *     table.uniqueComposite('email', 'username');
+ *     table.primaryComposite('id', 'role_id');
+ *
+ *   });
+ *
+ *   console.log(result);
+ *
+ * })();
+ */
 
 module.exports = { Schema, TableBuilder, ColumnBuilder };

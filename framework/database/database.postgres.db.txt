@@ -47,7 +47,7 @@ class Database {
                 throw new Error("Database connection error");
             }
 
-            const [rows] = await Database.dbInstance.query(sql, params);
+            const { rows }  = await Database.dbInstance.query(sql, params);
 
             return {
                 is_error: false,
