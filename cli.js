@@ -6,8 +6,8 @@ const { program } = require("commander");
 const fs = require("fs");
 const inquirer = require("inquirer");
 const path = require("path");
-const { db_questions } = require('./framework/questions');
-const { kalva_print } = require('./framework/print');
+const { db_questions } = require('./.build/questions');
+const { kalva_print } = require('./.build/print');
 
 class RunTime {
 
@@ -37,6 +37,25 @@ class RunTime {
             .description('Create a new Kalva project with the given name')
             .action(async (name) => await this.installing(name));
 
+        program
+            .command('check <project-name>')
+            .action(async name => {
+                
+                this.project_name = name;
+                this.current_db = 'mysql';
+                await this.database_files( );
+                
+
+            });
+
+        /*
+          var is_in_dir = this.is_project_director();
+                if( ! is_in_dir ) {
+                    return console.log(`${chalk.red.bold('Error')}: This ${chalk.yellow.bold(process.cwd())} is not a Kalva project directory. Please make sure you run this command inside the installed project directory!`);
+                }
+                
+                this.project_name = name; 
+        */
         // => Create Resource 
         // => Create Schema
         // => Create Model
@@ -47,6 +66,31 @@ class RunTime {
 
         // => Create CMS/E-Commerce/etc with one setup command
         program.parse();
+
+    }
+
+    is_project_director() {
+        
+        const projectDir = process.cwd();
+        const packageFile = path.join(projectDir, "package.json");
+
+        if (!fs.existsSync(packageFile)) {
+            return false;
+        }
+
+        const packageJson = JSON.parse(
+            fs.readFileSync(packageFile, "utf8")
+        );
+
+        if (!packageJson.name) {
+            return false;
+        }
+
+        if ( !packageJson.project_type || packageJson.project_type !== "kalva" ) {
+            return false;
+        }
+
+        return true;
 
     }
 
@@ -61,6 +105,7 @@ class RunTime {
                 dependencies: this.dependencies,
                 devDependencies: {},
                 author: "",
+                project_type: "kalva",
                 license: "MIT"
         };
     }
@@ -109,7 +154,10 @@ class RunTime {
         await this.database_questions();
 
         // create project files
-        await this.project_setup();
+        await this.json_package_setup();
+
+        // Create database files
+        await this.database_files();
 
         // install
         await this.install_packages();
@@ -123,6 +171,7 @@ class RunTime {
     
     async other_dependencies() { 
         this.dependencies['dotenv'] = "^17.4.2";
+        this.dependencies["chalk"]= "^4.1.2";
     }
     
     async create_mysql(){
@@ -156,7 +205,7 @@ class RunTime {
            return {
                 type: "input",
                 name: question.name,
-                message: chalk.grey('Insert ') + chalk.yellowBright(question.title) + ' :',
+                message: chalk.grey('Insert ') + chalk.hex('#596100').bold(question.title) + ' :',
                 default: question.value || ''
            }
         }));
@@ -196,20 +245,116 @@ class RunTime {
         }
     }
 
-    async project_setup() {
+    async json_package_setup() {
+        
         var jsonPackage = this.createPackageJson();
         var projectPath = path.join(process.cwd(), this.project_name);
+        
         if(! fs.existsSync(projectPath))
             fs.mkdirSync(projectPath, { recursive: true });
         // fs.mkdirSync(projectPath);
+
         fs.writeFileSync(
             path.join(projectPath, "package.json"),
             JSON.stringify(jsonPackage, null, 2)
         );
+
+
+    }
+
+ 
+    get_env_value(targetKey) {
+       
+        var proj_folder = path.join( process.cwd(), '/');
+
+        var env = path.join(proj_folder, ".env");
+        
+        const content = fs.readFileSync(env, "utf8");
+        const lines = content.split("\n");
+
+
+        if( !fs.existsSync(env) ) {
+            return console.log("Something went wrong!");
+        }
+        
+        for (let line of lines) {
+            line = line.trim();
+
+            if (!line || line.startsWith("#")) {
+                continue;
+            }
+
+            const [key, ...rest] = line.split("=");
+
+            if (key === targetKey) {
+                return rest.join("=").trim();
+            }
+        }
+
+        return null;
+    }
+ 
+    async database_files() {   
+
+        const proj_folder = path.join(process.cwd(), this.project_name);
+        
+        var env = path.join(proj_folder, ".env");
+
+        if( !fs.existsSync(env) ) {
+            return console.log("Something went wrong!");
+        }
+
+        
+        var framework_client = path.join(proj_folder, "framework");
+        if(! fs.existsSync(framework_client)) {
+            fs.mkdirSync(framework_client);
+        } 
+
+        var framework_client = path.join(framework_client, "database");
+        if(! fs.existsSync(framework_client)) {
+            fs.mkdirSync(framework_client);
+        } 
+        
+        var model_temp = {
+            _from: path.join(__dirname, `.build`, `.temp`, `orm`, `model.${this.current_db}.txt`),
+            _to:  path.join(framework_client, 'model.js')
+        }
+        var database_temp = {
+            _from: path.join(__dirname, `.build`, `.temp`, `database`, `database.${this.current_db}.txt`),
+            _to: path.join(framework_client, 'database.js')
+        }
+        var schema_temp = {
+            _from: path.join(__dirname, `.build`, `.temp`, `schema`, `schema.${this.current_db}.txt`),
+            _to: path.join(framework_client, 'schema.js')
+        }
+        
+        if( ! fs.existsSync(database_temp._from) || !fs.existsSync(model_temp._from) || !fs.existsSync(schema_temp._from) ) {
+            return console.log(`\n`,'🚫 ' , chalk.red.bold('Error: Template paths do not exist. Submit a ticket for this issue.'),`\n`);
+        }
+        
+        
+        // create model file
+        fs.writeFileSync(
+            model_temp._to,
+            fs.readFileSync(model_temp._from, 'utf8')
+        );
+
+        // create datanase
+        fs.writeFileSync(
+            database_temp._to, 
+            fs.readFileSync(database_temp._from, 'utf8')
+        );
+        // crate schema file 
+        fs.writeFileSync(
+            schema_temp._to,
+            fs.readFileSync(schema_temp._from, 'utf8')
+        );
+
+        
     }
     
     async install_packages() {
-        const { execSync } = require("child_process");
+         
         const projectPath = path.join(process.cwd(), this.project_name);
 
         console.log("\n", "📦", chalk.cyan.bold(`Installing Kalva files and dependencies... `), '\n');

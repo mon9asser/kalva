@@ -1,5 +1,27 @@
 
+framework 
+    database
+        connection.js
+        schema.js
+        query.js  
 
+blueprint
+    -- schema to migrate
+model
+    -- file to model
+controller
+    -- file to controller
+service
+    -- file to service
+
+middlewares
+route
+view
+
+
+
+
+--------------------------------------------------------------------------
 database -> sqlite | SQL | postgres | mongodb | SQL Server
     data/ -> sqlite (only)
     schema/ -> tables and db connection folder

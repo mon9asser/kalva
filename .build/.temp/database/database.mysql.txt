@@ -1,5 +1,6 @@
 const mysql = require('mysql2');
-const {parsed} = require('dotenv').config(); 
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') }); 
 
 class Database {
 
@@ -7,33 +8,32 @@ class Database {
     static dbInstance;
 
     constructor() {
-
+         
         if (Database.instance) {
             return Database.instance;
         } 
 
         var settings = {};
-        if(parsed.DATABASE_HOST) {
-            settings.host = parsed.DATABASE_HOST;
+        if(process.env.DATABASE_HOST) {
+            settings.host = process.env.DATABASE_HOST;
         }
-        if(parsed.DATABASE_USER ) {
-            settings.user = parsed.DATABASE_USER;
+        if(process.env.DATABASE_USER ) {
+            settings.user = process.env.DATABASE_USER;
         }
-        if(parsed.DATABASE_PASSWORD) {
-            settings.password = parsed.DATABASE_PASSWORD;
+        if(process.env.DATABASE_PASSWORD) {
+            settings.password = process.env.DATABASE_PASSWORD;
         }
-        if(parsed.DATABASE_NAME) {
-            settings.database = parsed.DATABASE_NAME;
+        if(process.env.DATABASE_NAME) {
+            settings.database = process.env.DATABASE_NAME;
         }
 
-        if(parsed.DATABASE_PORT) {
-            settings.port = parsed.DATABASE_PORT;
-        } 
+        if(process.env.DATABASE_PORT) {
+            settings.port = process.env.DATABASE_PORT;
+        }  
+       
+        Database.dbInstance = mysql.createPool(settings);  
+        Database.instance = this; 
 
-        Database.dbInstance = mysql.createPool(settings); 
-
-        Database.instance = this;
-        
     }
     
     async is_connected() {
@@ -52,7 +52,8 @@ class Database {
    async query(sql, params = []) {
         try {
 
-            const isConnected = await this.is_connected();
+            var db = new Database();
+            const isConnected = await db.is_connected();
             if (!isConnected) {
                 throw new Error("Database connection error");
             }

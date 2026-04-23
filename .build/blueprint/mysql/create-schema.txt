@@ -1,0 +1,13 @@
+
+const chalk = require('chalk');
+const { Schema } = require('./../framework/database/schema'); 
+(async function(){
+
+    const result = await Schema.create('{PLACEHOLDER_TABLE_NAME}', (col) => {
+        col.increments('id');
+        // Add new columns here ..
+        col.timestamps();
+    });
+ 
+
+})();

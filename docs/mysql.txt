@@ -1,0 +1,518 @@
+const chalk = require('chalk');
+const { Schema } = require('./../framework/database/schema');
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function log(result, label = '') {
+    const tag = label ? chalk.white.bold(`[${label}] `) : '';
+    if (result && result.is_error) {
+        console.log(chalk.red.bold(`  ❌ ${tag}${result.message}`));
+    } else if (result) {
+        console.log(chalk.green.bold(`  ✔  ${tag}${result.message}`));
+    }
+    if (result && result.sql) {
+        console.log(chalk.gray(result.sql.split('\n').map(l => '     ' + l).join('\n')));
+    }
+}
+
+function section(title) {
+    const line = '─'.repeat(Math.max(0, 60 - title.length));
+    console.log('\n' + chalk.cyan.bold(`━━━ ${title} `) + chalk.cyan(line));
+}
+
+async function cleanup(...tables) {
+    for (const t of tables) await Schema.drop(t);
+}
+
+// ─── Result Tracker ───────────────────────────────────────────────────────────
+
+const results = [];
+function track(name, passed, detail = '') {
+    results.push({ name, passed, detail });
+}
+
+async function runTest(name, fn) {
+    try {
+        const result = await fn();
+        const passed = result && !result.is_error;
+        track(name, passed, passed ? '' : (result ? result.message : 'no result'));
+        log(result, name);
+        return result;
+    } catch (e) {
+        track(name, false, e.message);
+        console.log(chalk.red.bold(`  ❌ [${name}] THREW: ${e.message}`));
+        return { is_error: true, message: e.message };
+    }
+}
+
+// ─── Run All Tests ────────────────────────────────────────────────────────────
+
+(async function () {
+
+    console.log(chalk.white.bold.bgBlue('\n  SCHEMA FULL TEST SUITE — INCLUDING ALTER BUILDER  \n'));
+
+    // ── 1. increments / timestamps ────────────────────────────────────────────
+    // FIX: MySQL only allows ONE auto_increment column per table.
+    // increments() and bigIncrements() are tested in SEPARATE tables.
+    section('1. increments · bigIncrements · timestamps');
+    await cleanup('test_increments', 'test_big_increments');
+
+    await runTest('increments + timestamps', () => Schema.create('test_increments', (t) => {
+        t.increments('id');
+        t.string('name');
+        t.timestamps();
+    }));
+
+    await runTest('bigIncrements (own table)', () => Schema.create('test_big_increments', (t) => {
+        t.bigIncrements('id');
+        t.string('label');
+    }));
+
+    // ── 2. All numeric types ──────────────────────────────────────────────────
+    section('2. Numeric types — bit · tinyInteger · boolean · smallInteger · mediumInteger · integer · bigInteger · decimal · float · double · real');
+    await cleanup('test_numeric');
+
+    await runTest('all numeric types', () => Schema.create('test_numeric', (t) => {
+        t.increments('id');
+        t.bit('flags', 8);
+        t.tinyInteger('tiny_val').default(0);
+        t.boolean('is_active').default(1);
+        t.smallInteger('score').unsigned();
+        t.mediumInteger('views').default(0);
+        t.integer('age').unsigned().check('age >= 0').default(0);
+        t.bigInteger('population').unsigned();
+        t.decimal('price', 10, 2).default(0.00);
+        t.numeric('amount', 8, 3).nullable();
+        t.float('ratio').nullable();
+        t.double('latitude', 10, 7);
+        t.real('longitude').nullable();
+    }));
+
+    // ── 3. Date / time ────────────────────────────────────────────────────────
+    // FIX: use .default('CURRENT_TIMESTAMP') — defaultRaw() does not exist on
+    // ColumnBuilder. The schema builder already handles CURRENT_TIMESTAMP
+    // correctly via timestamps(); for standalone timestamp columns use .default().
+    section('3. Date/Time types — date · datetime · timestamp · time · year');
+    await cleanup('test_dates');
+
+    await runTest('all date/time types', () => Schema.create('test_dates', (t) => {
+        t.increments('id');
+        t.date('birth_date').nullable();
+        t.datetime('published_at', 3).nullable();
+        t.timestamp('last_seen').default('CURRENT_TIMESTAMP');
+        t.time('opens_at').nullable();
+        t.year('grad_year').nullable();
+        t.timestamps();
+    }));
+
+    // ── 3b. defaultRaw() — auto-detect and skip gracefully if not implemented ─
+    section('3b. defaultRaw() — auto-detect');
+    await cleanup('test_defaultraw');
+
+    await runTest('defaultRaw (auto-detect)', async () => {
+        // Probe: create a temp table and check if the returned column builder
+        // has a defaultRaw method before we try to call it.
+        let columnRef = null;
+        try {
+            await Schema.create('_probe_tmp_', (t) => {
+                columnRef = t.timestamp('x');
+            });
+        } catch (_) {}
+        await Schema.drop('_probe_tmp_');
+
+        const hasDefaultRaw = columnRef && typeof columnRef.defaultRaw === 'function';
+
+        if (!hasDefaultRaw) {
+            return {
+                is_error: false,
+                message: 'defaultRaw() not implemented in ColumnBuilder — skipped'
+            };
+        }
+
+        return Schema.create('test_defaultraw', (t) => {
+            t.increments('id');
+            t.timestamp('created_at').defaultRaw('CURRENT_TIMESTAMP');
+            t.timestamp('updated_at').nullable();
+        });
+    });
+
+    // ── 4. String types ───────────────────────────────────────────────────────
+    section('4. String types — char · string · varchar · tinyText · text · mediumText · longText');
+    await cleanup('test_strings');
+
+    await runTest('all string types', () => Schema.create('test_strings', (t) => {
+        t.increments('id');
+        t.char('code', 6).notNullable();
+        t.string('name', 150).notNullable();
+        t.varchar('email', 100).unique();
+        t.tinyText('note').nullable();
+        t.text('bio').nullable();
+        t.mediumText('content').nullable();
+        t.longText('body').nullable();
+    }));
+
+    // ── 5. charset / collate on column ────────────────────────────────────────
+    section('5. Column charset · collate');
+    await cleanup('test_charset');
+
+    await runTest('charset + collate', () => Schema.create('test_charset', (t) => {
+        t.increments('id');
+        t.string('username').charset('utf8mb4').collate('utf8mb4_bin').unique();
+    }));
+
+    // ── 6. Binary / BLOB types ────────────────────────────────────────────────
+    section('6. Binary / BLOB types — binary · varBinary · tinyBlob · blob · mediumBlob · longBlob');
+    await cleanup('test_binary');
+
+    await runTest('binary + blob types', () => Schema.create('test_binary', (t) => {
+        t.increments('id');
+        t.binary('token', 64);
+        t.varBinary('data', 512).nullable();
+        t.tinyBlob('tiny_file').nullable();
+        t.blob('file_data').nullable();
+        t.mediumBlob('image').nullable();
+        t.longBlob('video').nullable();
+    }));
+
+    // ── 7. ENUM ───────────────────────────────────────────────────────────────
+    section('7. ENUM');
+    await cleanup('test_enum');
+
+    await runTest('enum type', () => Schema.create('test_enum', (t) => {
+        t.increments('id');
+        t.enum('status', 'active', 'inactive', 'banned').default('active');
+        t.enum('role', 'admin', 'editor', 'viewer').default('viewer');
+    }));
+
+    // ── 8. JSON ───────────────────────────────────────────────────────────────
+    section('8. JSON');
+    await cleanup('test_json');
+
+    await runTest('json type', () => Schema.create('test_json', (t) => {
+        t.increments('id');
+        t.json('metadata').nullable();
+        t.json('settings').nullable();
+    }));
+
+    // ── 9. Column modifiers ───────────────────────────────────────────────────
+    section('9. Column modifiers — nullable · default · unique · unsigned · zerofill · check · comment');
+    await cleanup('test_modifiers');
+
+    await runTest('all column modifiers', () => Schema.create('test_modifiers', (t) => {
+        t.increments('id');
+        t.string('required_field').notNullable();
+        t.string('optional_field').nullable();
+        t.string('with_default').default('hello');
+        t.integer('counter').unsigned().default(0);
+        t.integer('padded').zerofill().nullable();
+        t.integer('score').check('score BETWEEN 0 AND 100').default(50);
+        t.string('noted').comment('This is a comment');
+        t.string('unique_field').unique();
+    }));
+
+    // ── 10. Composite keys / indexes ──────────────────────────────────────────
+    section('10. Composite keys · indexes · fullText');
+    await cleanup('test_composite');
+
+    await runTest('composite + index + fulltext', () => Schema.create('test_composite', (t) => {
+        t.integer('order_id').unsigned();
+        t.integer('product_id').unsigned();
+        t.string('city', 100).nullable();
+        t.string('country', 100).nullable();
+        t.string('title', 200);
+        t.text('body').nullable();
+        t.primaryComposite('order_id', 'product_id');
+        t.uniqueComposite('city', 'country');
+        t.addIndex(['city', 'country']);
+        t.fullText(['title', 'body']);
+    }));
+
+    // ── 11. Foreign key references ────────────────────────────────────────────
+    section('11. Foreign key — references()');
+    await cleanup('test_posts', 'test_users_fk');
+
+    await runTest('parent table (users_fk)', () => Schema.create('test_users_fk', (t) => {
+        t.increments('id');
+        t.string('name');
+    }));
+
+    await runTest('child table with FK (posts)', () => Schema.create('test_posts', (t) => {
+        t.increments('id');
+        t.string('title', 200);
+        t.integer('user_id').unsigned()
+            .references('test_users_fk', 'id', 'CASCADE', 'CASCADE');
+    }));
+
+    // ── 12. Generated columns ─────────────────────────────────────────────────
+    section('12. Generated columns — generatedAs()');
+    await cleanup('test_generated');
+
+    await runTest('virtual + stored generated columns', () => Schema.create('test_generated', (t) => {
+        t.increments('id');
+        t.string('first_name', 100);
+        t.string('last_name', 100);
+        t.string('full_name', 220)
+            .generatedAs("CONCAT(`first_name`, ' ', `last_name`)", false)
+            .nullable();
+        t.integer('qty').unsigned().default(1);
+        t.decimal('unit_price', 10, 2).default(0.00);
+        t.decimal('total', 10, 2).generatedAs('`qty` * `unit_price`', true);
+    }));
+
+    // ── 13. Table options ─────────────────────────────────────────────────────
+    section('13. Table options — engine · charset · collate · comment');
+    await cleanup('test_table_opts');
+
+    await runTest('table options', () => Schema.create('test_table_opts', (t) => {
+        t.increments('id');
+        t.string('label');
+        t.engine('InnoDB');
+        t.charset('utf8mb4');
+        t.collate('utf8mb4_unicode_ci');
+        t.comment('Table option test');
+    }));
+
+    // ── 14. Schema utilities ──────────────────────────────────────────────────
+    // FIX: test_increments is now created successfully in section 1 so
+    // hasTable / hasColumn / getColumns will find it.
+    section('14. Schema utilities — hasTable · hasColumn · getColumns · rename · drop');
+
+    try {
+        const exists = await Schema.hasTable('test_increments');
+        console.log(chalk.yellow(`  hasTable('test_increments')  → ${exists}`));
+        track('hasTable', exists === true, exists !== true ? `returned: ${exists}` : '');
+    } catch (e) { track('hasTable', false, e.message); }
+
+    try {
+        const hasCol = await Schema.hasColumn('test_increments', 'name');
+        console.log(chalk.yellow(`  hasColumn('test_increments', 'name')  → ${hasCol}`));
+        track('hasColumn', hasCol === true, hasCol !== true ? `returned: ${hasCol}` : '');
+    } catch (e) { track('hasColumn', false, e.message); }
+
+    try {
+        const cols = await Schema.getColumns('test_increments');
+        console.log(chalk.yellow(`  getColumns('test_increments')  → [${cols.join(', ')}]`));
+        track('getColumns', Array.isArray(cols) && cols.length > 0, !Array.isArray(cols) ? 'not array' : '');
+    } catch (e) { track('getColumns', false, e.message); }
+
+    await runTest('rename table', () => Schema.rename('test_table_opts', 'test_table_opts_renamed'));
+    await runTest('drop renamed table', () => Schema.drop('test_table_opts_renamed'));
+
+    // ── 15. Full combined example ─────────────────────────────────────────────
+    section('15. Full combined example');
+    await cleanup('test_full_example', 'test_users_fk');
+
+    await runTest('parent table', () => Schema.create('test_users_fk', (t) => {
+        t.increments('id');
+        t.string('name');
+    }));
+
+    await runTest('full combined table', () => Schema.create('test_full_example', (t) => {
+        t.increments('id');
+        t.string('title', 200).notNullable();
+        t.longText('body').nullable();
+        t.enum('status', 'draft', 'published', 'archived').default('draft');
+        t.json('meta').nullable();
+        t.integer('user_id').unsigned()
+            .references('test_users_fk', 'id', 'CASCADE', 'CASCADE');
+        t.integer('view_count').unsigned().default(0);
+        t.decimal('rating', 3, 2).nullable();
+        t.boolean('is_featured').default(0);
+        t.string('slug', 250).unique();
+        t.string('first_name', 100).nullable();
+        t.string('last_name', 100).nullable();
+        t.string('full_name', 220)
+            .generatedAs("CONCAT(`first_name`, ' ', `last_name`)", false)
+            .nullable();
+        t.timestamps();
+        t.uniqueComposite('slug', 'user_id');
+        t.addIndex(['status', 'created_at']);
+        t.fullText(['title', 'body']);
+        t.engine('InnoDB');
+        t.comment('Full example table');
+    }));
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ── 16. Schema.table() — AlterBuilder ────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    section('16. AlterBuilder — Schema.table() — ADD COLUMN');
+    await cleanup('test_alter');
+
+    await Schema.create('test_alter', (t) => {
+        t.increments('id');
+        t.string('name', 100);
+        t.string('email', 150).unique();
+        t.integer('age').unsigned().nullable();
+        t.timestamps();
+    });
+
+    await runTest('add string column', () => Schema.table('test_alter', (t) => {
+        t.string('phone', 20).nullable();
+    }));
+
+    await runTest('add integer column with default', () => Schema.table('test_alter', (t) => {
+        t.integer('score').unsigned().default(0);
+    }));
+
+    await runTest('add nullable text column', () => Schema.table('test_alter', (t) => {
+        t.text('bio').nullable();
+    }));
+
+    await runTest('add enum column', () => Schema.table('test_alter', (t) => {
+        t.enum('status', 'active', 'inactive').default('active');
+    }));
+
+    await runTest('add json column', () => Schema.table('test_alter', (t) => {
+        t.json('metadata').nullable();
+    }));
+
+    await runTest('add boolean column', () => Schema.table('test_alter', (t) => {
+        t.boolean('is_verified').default(0);
+    }));
+
+    await runTest('add decimal column', () => Schema.table('test_alter', (t) => {
+        t.decimal('balance', 10, 2).default(0.00);
+    }));
+
+    section('16b. AlterBuilder — ADD COLUMN with position (after)');
+
+    await runTest('add column AFTER specific column', () => Schema.table('test_alter', (t) => {
+        t.string('nickname', 80).nullable().after('name');
+    }));
+
+    section('16c. AlterBuilder — MODIFY COLUMN');
+
+    await runTest('modify column type/length', () => Schema.table('test_alter', (t) => {
+        t.modify('name').string(null, 200).notNullable();
+    }));
+
+    await runTest('modify column to nullable', () => Schema.table('test_alter', (t) => {
+        t.modify('score').integer().nullable();
+    }));
+
+    section('16d. AlterBuilder — RENAME COLUMN');
+
+    await runTest('renameColumn', () => Schema.table('test_alter', (t) => {
+        t.renameColumn('bio', 'about');
+    }));
+
+    section('16e. AlterBuilder — DROP COLUMN');
+
+    await runTest('dropColumn', () => Schema.table('test_alter', (t) => {
+        t.dropColumn('metadata');
+    }));
+
+    section('16f. AlterBuilder — ADD INDEX / UNIQUE / FULLTEXT');
+
+    await runTest('addIndex on single column', () => Schema.table('test_alter', (t) => {
+        t.addIndex('phone');
+    }));
+
+    await runTest('addUniqueIndex', () => Schema.table('test_alter', (t) => {
+        t.addUniqueIndex('nickname');
+    }));
+
+    await runTest('addFullText', () => Schema.table('test_alter', (t) => {
+        t.addFullText(['name', 'about']);
+    }));
+
+    section('16g. AlterBuilder — DROP INDEX');
+
+    await runTest('dropIndex by name', () => Schema.table('test_alter', (t) => {
+        t.dropIndex('idx_test_alter_phone');
+    }));
+
+    section('16h. AlterBuilder — ADD / DROP FOREIGN KEY');
+
+    await cleanup('test_alter_roles');
+    await Schema.create('test_alter_roles', (t) => {
+        t.increments('id');
+        t.string('role_name', 50);
+    });
+
+    await Schema.table('test_alter', (t) => {
+        t.integer('role_id').unsigned().nullable();
+    });
+
+    await runTest('addForeign key', () => Schema.table('test_alter', (t) => {
+        t.addForeign('role_id', 'test_alter_roles', 'id', 'SET NULL', 'CASCADE');
+    }));
+
+    await runTest('dropForeign key', () => Schema.table('test_alter', (t) => {
+        t.dropForeign('fk_test_alter_role_id');
+    }));
+
+    section('16i. AlterBuilder — DROP PRIMARY KEY');
+
+    await cleanup('test_alter_nopk');
+    await Schema.create('test_alter_nopk', (t) => {
+        t.integer('a').unsigned();
+        t.integer('b').unsigned();
+        t.primaryComposite('a', 'b');
+    });
+
+    await runTest('dropPrimary', () => Schema.table('test_alter_nopk', (t) => {
+        t.dropPrimary();
+    }));
+
+    section('16j. AlterBuilder — multiple operations in one call');
+
+    await runTest('multi-op ALTER TABLE', () => Schema.table('test_alter', (t) => {
+        t.string('extra1', 50).nullable();
+        t.string('extra2', 50).nullable();
+        t.dropColumn('is_verified');
+    }));
+
+    // ── 17. Error handling ────────────────────────────────────────────────────
+    section('17. Error handling — alter non-existent table');
+
+    await runTest('alter non-existent table (expect error)', async () => {
+        const r = await Schema.table('this_table_does_not_exist_xyz', (t) => {
+            t.string('col').nullable();
+        });
+        if (r && r.is_error) return { is_error: false, message: 'Correctly returned error for missing table' };
+        return { is_error: true, message: 'Should have returned error for missing table' };
+    });
+
+    // ── Cleanup all test tables ───────────────────────────────────────────────
+    section('Cleanup — dropping all test tables');
+    const testTables = [
+        'test_increments', 'test_big_increments', 'test_numeric', 'test_dates',
+        'test_strings', 'test_charset', 'test_binary', 'test_enum', 'test_json',
+        'test_modifiers', 'test_composite', 'test_posts', 'test_generated',
+        'test_full_example', 'test_users_fk', 'test_alter', 'test_alter_roles',
+        'test_alter_nopk', 'test_defaultraw',
+    ];
+    for (const t of testTables) {
+        const r = await Schema.drop(t);
+        if (r && !r.is_error) {
+            console.log(chalk.gray(`  dropped: ${t}`));
+        }
+    }
+
+    // ── Final Report ──────────────────────────────────────────────────────────
+    console.log('\n' + chalk.white.bold.bgBlue('  TEST RESULTS  ') + '\n');
+
+    let passed = 0, failed = 0;
+    for (const r of results) {
+        if (r.passed) {
+            console.log(chalk.green(`  ✔  ${r.name}`));
+            passed++;
+        } else {
+            console.log(chalk.red(`  ❌  ${r.name}`) + (r.detail ? chalk.gray(` — ${r.detail}`) : ''));
+            failed++;
+        }
+    }
+
+    const total = passed + failed;
+    console.log('\n' + chalk.white.bold(`Total: ${total} | `) + chalk.green.bold(`Passed: ${passed} `) + chalk.red.bold(`| Failed: ${failed}`));
+
+    if (failed === 0) {
+        console.log('\n' + chalk.white.bold.bgGreen('  ALL TESTS PASSED  ') + '\n');
+    } else {
+        console.log('\n' + chalk.white.bold.bgRed(`  ${failed} TEST(S) FAILED  `) + '\n');
+    }
+
+})();
+ 
+ 

@@ -1,0 +1,788 @@
+const { Database } = require("./database");
+
+// ─── ColumnBuilder ────────────────────────────────────────────────────────────
+
+class ColumnBuilder {
+    constructor(table, name, type) {
+        this._table         = table;
+        this._name          = name;
+        this._type          = type;
+        this._nullable      = false;
+        this._default       = undefined;
+        this._unique        = false;
+        this._primary       = false;
+        this._autoIncrement = false;
+        this._references    = null;
+        this._check         = null;
+        this._comment       = null;
+        this._unsigned      = false;
+        this._zerofill      = false;
+        this._charset       = null;
+        this._collate       = null;
+        this._invisible     = false;
+        this._after         = null;
+        this._generated     = null;
+    }
+
+    nullable()            { this._nullable = true;  return this; }
+    notNullable()         { this._nullable = false; return this; }
+    default(value)        { this._default  = value; return this; }
+    unique()              { this._unique   = true;  return this; }
+    primary()             { this._primary  = true;  return this; }
+    unsigned()            { this._unsigned = true;  return this; }
+    invisible()           { this._invisible = true; return this; }
+
+    autoIncrement() {
+        this._autoIncrement = true;
+        this._primary       = true;
+        return this;
+    }
+
+    zerofill() {
+        this._zerofill = true;
+        this._unsigned = true;
+        return this;
+    }
+
+    charset(v)   { this._charset  = v; return this; }
+    collate(v)   { this._collate  = v; return this; }
+    comment(v)   { this._comment  = v; return this; }
+    check(expr)  { this._check    = expr; return this; }
+    after(col)   { this._after    = col; return this; }
+
+    generatedAs(expr, stored = false) {
+        this._generated = { expr, stored };
+        return this;
+    }
+
+    references(foreignTable, foreignCol = "id", onDelete = "RESTRICT", onUpdate = "RESTRICT") {
+        this._references = { table: foreignTable, col: foreignCol, onDelete, onUpdate };
+        return this;
+    }
+
+    // ── Compile ───────────────────────────────────────────────────────────────
+
+    toSQL() {
+        const parts = [`\`${this._name}\``, this._type];
+
+        if (this._unsigned)  parts.push("UNSIGNED");
+        if (this._zerofill)  parts.push("ZEROFILL");
+        if (this._charset)   parts.push(`CHARACTER SET ${this._charset}`);
+        if (this._collate)   parts.push(`COLLATE ${this._collate}`);
+
+        if (this._generated) {
+            parts.push(`AS (${this._generated.expr})`);
+            parts.push(this._generated.stored ? "STORED" : "VIRTUAL");
+        } else {
+            if (!this._nullable && !this._primary) parts.push("NOT NULL");
+            if (this._nullable)                    parts.push("NULL");
+
+            if (this._default !== undefined) {
+                const isRawSQL = (val) =>
+                    typeof val === "string" &&
+                    /^(CURRENT_TIMESTAMP|NOW\(\)|UUID\(\))$/i.test(val);
+
+                let raw;
+                if (isRawSQL(this._default))            raw = this._default;
+                else if (typeof this._default === "string") raw = `'${this._default.replace(/'/g, "''")}'`;
+                else                                        raw = this._default;
+
+                parts.push(`DEFAULT ${raw}`);
+            }
+
+            if (this._autoIncrement) parts.push("AUTO_INCREMENT");
+        }
+
+        if (this._primary)              parts.push("PRIMARY KEY");
+        if (this._unique && !this._primary) parts.push("UNIQUE");
+        if (this._check)                parts.push(`CHECK (${this._check})`);
+        if (this._invisible)            parts.push("INVISIBLE");
+        if (this._comment)              parts.push(`COMMENT '${this._comment.replace(/'/g, "''")}'`);
+        if (this._after)                parts.push(`AFTER \`${this._after}\``);
+
+        return parts.join(" ");
+    }
+
+    toFKSQL() {
+        if (!this._references) return null;
+        const { table, col, onDelete, onUpdate } = this._references;
+        return (
+            `CONSTRAINT \`fk_${this._table._name}_${this._name}\` ` +
+            `FOREIGN KEY (\`${this._name}\`) ` +
+            `REFERENCES \`${table}\`(\`${col}\`) ` +
+            `ON DELETE ${onDelete} ON UPDATE ${onUpdate}`
+        );
+    }
+}
+
+// ─── AlterBuilder ─────────────────────────────────────────────────────────────
+
+class AlterBuilder {
+    constructor(tableName) {
+        this._name    = tableName;
+        this._actions = [];   // { type, ... }
+    }
+
+    // ── Private helper — creates a ColumnBuilder wired to this alter context ──
+
+    _addColumn(name, type) {
+        const col = new ColumnBuilder({ _name: this._name }, name, type);
+        this._actions.push({ type: "ADD", col });
+        return col;
+    }
+
+    _modifyColumn(name, type) {
+        const col = new ColumnBuilder({ _name: this._name }, name, type);
+        this._actions.push({ type: "MODIFY", col });
+        return col;
+    }
+
+    // ── Add column — all types mirrored from TableBuilder ────────────────────
+
+    /** ADD COLUMN — BIT(n) */
+    bit(name, length = 1)                  { return this._addColumn(name, `BIT(${length})`); }
+    /** ADD COLUMN — TINYINT */
+    tinyInteger(name)                      { return this._addColumn(name, "TINYINT"); }
+    /** ADD COLUMN — BOOLEAN */
+    boolean(name)                          { return this._addColumn(name, "BOOLEAN"); }
+    /** ADD COLUMN — SMALLINT */
+    smallInteger(name)                     { return this._addColumn(name, "SMALLINT"); }
+    /** ADD COLUMN — MEDIUMINT */
+    mediumInteger(name)                    { return this._addColumn(name, "MEDIUMINT"); }
+    /** ADD COLUMN — INT */
+    integer(name)                          { return this._addColumn(name, "INT"); }
+    /** ADD COLUMN — INT (alias) */
+    int(name)                              { return this._addColumn(name, "INT"); }
+    /** ADD COLUMN — BIGINT */
+    bigInteger(name)                       { return this._addColumn(name, "BIGINT"); }
+    /** ADD COLUMN — DECIMAL(p,s) */
+    decimal(name, precision = 10, scale = 2) { return this._addColumn(name, `DECIMAL(${precision},${scale})`); }
+    /** ADD COLUMN — NUMERIC(p,s) */
+    numeric(name, precision = 10, scale = 2) { return this._addColumn(name, `NUMERIC(${precision},${scale})`); }
+    /** ADD COLUMN — FLOAT */
+    float(name, precision = null)          { return this._addColumn(name, precision ? `FLOAT(${precision})` : "FLOAT"); }
+    /** ADD COLUMN — DOUBLE */
+    double(name, precision = null, scale = null) {
+        return this._addColumn(name, (precision && scale) ? `DOUBLE(${precision},${scale})` : "DOUBLE");
+    }
+    /** ADD COLUMN — REAL */
+    real(name)                             { return this._addColumn(name, "REAL"); }
+    /** ADD COLUMN — DATE */
+    date(name)                             { return this._addColumn(name, "DATE"); }
+    /** ADD COLUMN — DATETIME(fsp) */
+    datetime(name, fsp = 0)                { return this._addColumn(name, fsp > 0 ? `DATETIME(${fsp})` : "DATETIME"); }
+    /** ADD COLUMN — TIMESTAMP(fsp) */
+    timestamp(name, fsp = 0)               { return this._addColumn(name, fsp > 0 ? `TIMESTAMP(${fsp})` : "TIMESTAMP"); }
+    /** ADD COLUMN — TIME(fsp) */
+    time(name, fsp = 0)                    { return this._addColumn(name, fsp > 0 ? `TIME(${fsp})` : "TIME"); }
+    /** ADD COLUMN — YEAR */
+    year(name)                             { return this._addColumn(name, "YEAR"); }
+    /** ADD COLUMN — CHAR(n) */
+    char(name, length = 1)                 { return this._addColumn(name, `CHAR(${length})`); }
+    /** ADD COLUMN — VARCHAR(n) */
+    string(name, length = 255)             { return this._addColumn(name, `VARCHAR(${length})`); }
+    /** ADD COLUMN — VARCHAR(n) alias */
+    varchar(name, length = 255)            { return this._addColumn(name, `VARCHAR(${length})`); }
+    /** ADD COLUMN — TINYTEXT */
+    tinyText(name)                         { return this._addColumn(name, "TINYTEXT"); }
+    /** ADD COLUMN — TEXT */
+    text(name)                             { return this._addColumn(name, "TEXT"); }
+    /** ADD COLUMN — MEDIUMTEXT */
+    mediumText(name)                       { return this._addColumn(name, "MEDIUMTEXT"); }
+    /** ADD COLUMN — LONGTEXT */
+    longText(name)                         { return this._addColumn(name, "LONGTEXT"); }
+    /** ADD COLUMN — BINARY(n) */
+    binary(name, length = 1)               { return this._addColumn(name, `BINARY(${length})`); }
+    /** ADD COLUMN — VARBINARY(n) */
+    varBinary(name, length = 255)          { return this._addColumn(name, `VARBINARY(${length})`); }
+    /** ADD COLUMN — TINYBLOB */
+    tinyBlob(name)                         { return this._addColumn(name, "TINYBLOB"); }
+    /** ADD COLUMN — BLOB */
+    blob(name)                             { return this._addColumn(name, "BLOB"); }
+    /** ADD COLUMN — MEDIUMBLOB */
+    mediumBlob(name)                       { return this._addColumn(name, "MEDIUMBLOB"); }
+    /** ADD COLUMN — LONGBLOB */
+    longBlob(name)                         { return this._addColumn(name, "LONGBLOB"); }
+    /** ADD COLUMN — JSON */
+    json(name)                             { return this._addColumn(name, "JSON"); }
+    /** ADD COLUMN — GEOMETRY */
+    geometry(name)                         { return this._addColumn(name, "GEOMETRY"); }
+    /** ADD COLUMN — POINT */
+    point(name)                            { return this._addColumn(name, "POINT"); }
+    /** ADD COLUMN — LINESTRING */
+    lineString(name)                       { return this._addColumn(name, "LINESTRING"); }
+    /** ADD COLUMN — POLYGON */
+    polygon(name)                          { return this._addColumn(name, "POLYGON"); }
+    /** ADD COLUMN — MULTIPOINT */
+    multiPoint(name)                       { return this._addColumn(name, "MULTIPOINT"); }
+    /** ADD COLUMN — MULTILINESTRING */
+    multiLineString(name)                  { return this._addColumn(name, "MULTILINESTRING"); }
+    /** ADD COLUMN — MULTIPOLYGON */
+    multiPolygon(name)                     { return this._addColumn(name, "MULTIPOLYGON"); }
+    /** ADD COLUMN — GEOMETRYCOLLECTION */
+    geometryCollection(name)               { return this._addColumn(name, "GEOMETRYCOLLECTION"); }
+
+    /** ADD COLUMN — ENUM('a','b',...) */
+    enum(name, ...values) {
+        const list = values.flat().map((v) => `'${v.replace(/'/g, "''")}'`).join(", ");
+        return this._addColumn(name, `ENUM(${list})`);
+    }
+
+    /**
+     * ADD two timestamp columns: created_at + updated_at
+     * Same as TableBuilder.timestamps()
+     */
+    timestamps() {
+        this._addColumn("created_at", "TIMESTAMP").default("CURRENT_TIMESTAMP");
+        const u = this._addColumn("updated_at", "TIMESTAMP").nullable();
+        u._onUpdateCurrentTimestamp = true;
+        return this;
+    }
+
+    // ── Modify existing column — redefine its full type + modifiers ───────────
+
+    /**
+     * MODIFY COLUMN — redefine an existing column completely.
+     * Chain the same modifiers as when creating: .nullable(), .default(), etc.
+     *
+     * @example
+     * t.modify('email').string('email', 200).notNullable().unique()
+     *
+     * Note: the name passed to the type method is ignored;
+     *       the name passed to modify() is used.
+     */
+    modify(name) {
+        return new ModifyProxy(this, name);
+    }
+
+    // ── Drop column ───────────────────────────────────────────────────────────
+
+    /**
+     * DROP COLUMN `name`
+     * @param {string} name
+     */
+    dropColumn(name) {
+        this._actions.push({ type: "DROP_COLUMN", name });
+        return this;
+    }
+
+    // ── Rename column ─────────────────────────────────────────────────────────
+
+    /**
+     * RENAME COLUMN `from` TO `to`  (MySQL 8.0+)
+     * @param {string} from
+     * @param {string} to
+     */
+    renameColumn(from, to) {
+        this._actions.push({ type: "RENAME_COLUMN", from, to });
+        return this;
+    }
+
+    // ── Index operations ──────────────────────────────────────────────────────
+
+    /**
+     * ADD INDEX (col1, col2, ...)
+     * @param {string|string[]} cols
+     * @param {string}          [indexName]
+     */
+    addIndex(cols, indexName = null) {
+        const c = [cols].flat();
+        const n = indexName || `idx_${this._name}_${c.join("_")}`;
+        this._actions.push({ type: "ADD_INDEX", cols: c, name: n });
+        return this;
+    }
+
+    /**
+     * ADD UNIQUE KEY (col1, col2, ...)
+     * @param {string|string[]} cols
+     * @param {string}          [indexName]
+     */
+    addUniqueIndex(cols, indexName = null) {
+        const c = [cols].flat();
+        const n = indexName || `uq_${this._name}_${c.join("_")}`;
+        this._actions.push({ type: "ADD_UNIQUE", cols: c, name: n });
+        return this;
+    }
+
+    /**
+     * ADD FULLTEXT INDEX
+     * @param {string|string[]} cols
+     * @param {string}          [indexName]
+     */
+    addFullText(cols, indexName = null) {
+        const c = [cols].flat();
+        const n = indexName || `ft_${this._name}_${c.join("_")}`;
+        this._actions.push({ type: "ADD_FULLTEXT", cols: c, name: n });
+        return this;
+    }
+
+    /**
+     * DROP INDEX by name
+     * @param {string} indexName
+     */
+    dropIndex(indexName) {
+        this._actions.push({ type: "DROP_INDEX", name: indexName });
+        return this;
+    }
+
+    /**
+     * DROP PRIMARY KEY
+     */
+    dropPrimary() {
+        this._actions.push({ type: "DROP_PRIMARY" });
+        return this;
+    }
+
+    /**
+     * ADD FOREIGN KEY
+     * @param {string} column
+     * @param {string} foreignTable
+     * @param {string} [foreignCol="id"]
+     * @param {string} [onDelete="RESTRICT"]
+     * @param {string} [onUpdate="RESTRICT"]
+     */
+    addForeign(column, foreignTable, foreignCol = "id", onDelete = "RESTRICT", onUpdate = "RESTRICT") {
+        this._actions.push({ type: "ADD_FK", column, foreignTable, foreignCol, onDelete, onUpdate });
+        return this;
+    }
+
+    /**
+     * DROP FOREIGN KEY by constraint name
+     * @param {string} constraintName
+     */
+    dropForeign(constraintName) {
+        this._actions.push({ type: "DROP_FK", name: constraintName });
+        return this;
+    }
+
+    // ── Compile to SQL ────────────────────────────────────────────────────────
+
+    toSQL() {
+        if (this._actions.length === 0)
+            throw new Error(`No alterations defined for table "${this._name}".`);
+
+        const clauses = [];
+
+        for (const action of this._actions) {
+            switch (action.type) {
+
+                case "ADD": {
+                    let clause = `ADD COLUMN ${action.col.toSQL()}`;
+                    if (action.col._onUpdateCurrentTimestamp)
+                        clause += " ON UPDATE CURRENT_TIMESTAMP";
+                    // ADD FK inline if column has references
+                    const fk = action.col.toFKSQL();
+                    clauses.push(clause);
+                    if (fk) clauses.push(`ADD ${fk}`);
+                    break;
+                }
+
+                case "MODIFY": {
+                    let clause = `MODIFY COLUMN ${action.col.toSQL()}`;
+                    if (action.col._onUpdateCurrentTimestamp)
+                        clause += " ON UPDATE CURRENT_TIMESTAMP";
+                    clauses.push(clause);
+                    break;
+                }
+
+                case "DROP_COLUMN":
+                    clauses.push(`DROP COLUMN \`${action.name}\``);
+                    break;
+
+                case "RENAME_COLUMN":
+                    clauses.push(`RENAME COLUMN \`${action.from}\` TO \`${action.to}\``);
+                    break;
+
+                case "ADD_INDEX":
+                    clauses.push(`ADD INDEX \`${action.name}\` (${action.cols.map(c => `\`${c}\``).join(", ")})`);
+                    break;
+
+                case "ADD_UNIQUE":
+                    clauses.push(`ADD UNIQUE KEY \`${action.name}\` (${action.cols.map(c => `\`${c}\``).join(", ")})`);
+                    break;
+
+                case "ADD_FULLTEXT":
+                    clauses.push(`ADD FULLTEXT INDEX \`${action.name}\` (${action.cols.map(c => `\`${c}\``).join(", ")})`);
+                    break;
+
+                case "DROP_INDEX":
+                    clauses.push(`DROP INDEX \`${action.name}\``);
+                    break;
+
+                case "DROP_PRIMARY":
+                    clauses.push(`DROP PRIMARY KEY`);
+                    break;
+
+                case "ADD_FK":
+                    clauses.push(
+                        `ADD CONSTRAINT \`fk_${this._name}_${action.column}\` ` +
+                        `FOREIGN KEY (\`${action.column}\`) ` +
+                        `REFERENCES \`${action.foreignTable}\`(\`${action.foreignCol}\`) ` +
+                        `ON DELETE ${action.onDelete} ON UPDATE ${action.onUpdate}`
+                    );
+                    break;
+
+                case "DROP_FK":
+                    clauses.push(`DROP FOREIGN KEY \`${action.name}\``);
+                    break;
+            }
+        }
+
+        return (
+            `ALTER TABLE \`${this._name}\`\n` +
+            clauses.map(c => `    ${c}`).join(",\n") +
+            `;`
+        );
+    }
+}
+
+// ── ModifyProxy — lets modify('col').string(...) work cleanly ─────────────────
+
+class ModifyProxy {
+    constructor(alter, colName) {
+        this._alter   = alter;
+        this._colName = colName;
+    }
+
+    _make(type) {
+        const col = new ColumnBuilder({ _name: this._alter._name }, this._colName, type);
+        this._alter._actions.push({ type: "MODIFY", col });
+        return col;
+    }
+
+    bit(_, length = 1)                     { return this._make(`BIT(${length})`); }
+    tinyInteger()                          { return this._make("TINYINT"); }
+    boolean()                              { return this._make("BOOLEAN"); }
+    smallInteger()                         { return this._make("SMALLINT"); }
+    mediumInteger()                        { return this._make("MEDIUMINT"); }
+    integer()                              { return this._make("INT"); }
+    int()                                  { return this._make("INT"); }
+    bigInteger()                           { return this._make("BIGINT"); }
+    decimal(_, p = 10, s = 2)             { return this._make(`DECIMAL(${p},${s})`); }
+    numeric(_, p = 10, s = 2)             { return this._make(`NUMERIC(${p},${s})`); }
+    float(_, precision = null)             { return this._make(precision ? `FLOAT(${precision})` : "FLOAT"); }
+    double(_, p = null, s = null)         { return this._make((p && s) ? `DOUBLE(${p},${s})` : "DOUBLE"); }
+    real()                                 { return this._make("REAL"); }
+    date()                                 { return this._make("DATE"); }
+    datetime(_, fsp = 0)                   { return this._make(fsp > 0 ? `DATETIME(${fsp})` : "DATETIME"); }
+    timestamp(_, fsp = 0)                  { return this._make(fsp > 0 ? `TIMESTAMP(${fsp})` : "TIMESTAMP"); }
+    time(_, fsp = 0)                       { return this._make(fsp > 0 ? `TIME(${fsp})` : "TIME"); }
+    year()                                 { return this._make("YEAR"); }
+    char(_, length = 1)                    { return this._make(`CHAR(${length})`); }
+    string(_, length = 255)               { return this._make(`VARCHAR(${length})`); }
+    varchar(_, length = 255)              { return this._make(`VARCHAR(${length})`); }
+    tinyText()                             { return this._make("TINYTEXT"); }
+    text()                                 { return this._make("TEXT"); }
+    mediumText()                           { return this._make("MEDIUMTEXT"); }
+    longText()                             { return this._make("LONGTEXT"); }
+    binary(_, length = 1)                  { return this._make(`BINARY(${length})`); }
+    varBinary(_, length = 255)            { return this._make(`VARBINARY(${length})`); }
+    tinyBlob()                             { return this._make("TINYBLOB"); }
+    blob()                                 { return this._make("BLOB"); }
+    mediumBlob()                           { return this._make("MEDIUMBLOB"); }
+    longBlob()                             { return this._make("LONGBLOB"); }
+    json()                                 { return this._make("JSON"); }
+    enum(...values) {
+        const list = values.flat().map(v => `'${v.replace(/'/g, "''")}'`).join(", ");
+        return this._make(`ENUM(${list})`);
+    }
+}
+
+// ─── TableBuilder ─────────────────────────────────────────────────────────────
+
+class TableBuilder {
+    constructor(tableName) {
+        this._name             = tableName;
+        this._columns          = [];
+        this._compositeUniques = [];
+        this._compositePKs     = [];
+        this._indexes          = [];
+        this._fullTextIndexes  = [];
+        this._spatialIndexes   = [];
+        this._engine           = "InnoDB";
+        this._charset          = "utf8mb4";
+        this._collate          = "utf8mb4_unicode_ci";
+        this._comment          = null;
+        this._ifNotExists      = true;
+    }
+
+    // ── Column types ──────────────────────────────────────────────────────────
+
+    bit(name, length = 1)                   { return this._addColumn(name, `BIT(${length})`); }
+    tinyInteger(name)                       { return this._addColumn(name, "TINYINT"); }
+    boolean(name)                           { return this._addColumn(name, "BOOLEAN"); }
+    smallInteger(name)                      { return this._addColumn(name, "SMALLINT"); }
+    mediumInteger(name)                     { return this._addColumn(name, "MEDIUMINT"); }
+    integer(name)                           { return this._addColumn(name, "INT"); }
+    int(name)                               { return this._addColumn(name, "INT"); }
+    bigInteger(name)                        { return this._addColumn(name, "BIGINT"); }
+    decimal(name, p = 10, s = 2)           { return this._addColumn(name, `DECIMAL(${p},${s})`); }
+    numeric(name, p = 10, s = 2)           { return this._addColumn(name, `NUMERIC(${p},${s})`); }
+    float(name, precision = null)           { return this._addColumn(name, precision ? `FLOAT(${precision})` : "FLOAT"); }
+    double(name, p = null, s = null)       { return this._addColumn(name, (p && s) ? `DOUBLE(${p},${s})` : "DOUBLE"); }
+    real(name)                              { return this._addColumn(name, "REAL"); }
+    date(name)                              { return this._addColumn(name, "DATE"); }
+    datetime(name, fsp = 0)                 { return this._addColumn(name, fsp > 0 ? `DATETIME(${fsp})` : "DATETIME"); }
+    timestamp(name, fsp = 0)               { return this._addColumn(name, fsp > 0 ? `TIMESTAMP(${fsp})` : "TIMESTAMP"); }
+    time(name, fsp = 0)                    { return this._addColumn(name, fsp > 0 ? `TIME(${fsp})` : "TIME"); }
+    year(name)                              { return this._addColumn(name, "YEAR"); }
+    char(name, length = 1)                  { return this._addColumn(name, `CHAR(${length})`); }
+    string(name, length = 255)             { return this._addColumn(name, `VARCHAR(${length})`); }
+    varchar(name, length = 255)            { return this._addColumn(name, `VARCHAR(${length})`); }
+    tinyText(name)                          { return this._addColumn(name, "TINYTEXT"); }
+    text(name)                              { return this._addColumn(name, "TEXT"); }
+    mediumText(name)                        { return this._addColumn(name, "MEDIUMTEXT"); }
+    longText(name)                          { return this._addColumn(name, "LONGTEXT"); }
+    binary(name, length = 1)                { return this._addColumn(name, `BINARY(${length})`); }
+    varBinary(name, length = 255)          { return this._addColumn(name, `VARBINARY(${length})`); }
+    tinyBlob(name)                          { return this._addColumn(name, "TINYBLOB"); }
+    blob(name)                              { return this._addColumn(name, "BLOB"); }
+    mediumBlob(name)                        { return this._addColumn(name, "MEDIUMBLOB"); }
+    longBlob(name)                          { return this._addColumn(name, "LONGBLOB"); }
+    json(name)                              { return this._addColumn(name, "JSON"); }
+    geometry(name)                          { return this._addColumn(name, "GEOMETRY"); }
+    point(name)                             { return this._addColumn(name, "POINT"); }
+    lineString(name)                        { return this._addColumn(name, "LINESTRING"); }
+    polygon(name)                           { return this._addColumn(name, "POLYGON"); }
+    multiPoint(name)                        { return this._addColumn(name, "MULTIPOINT"); }
+    multiLineString(name)                   { return this._addColumn(name, "MULTILINESTRING"); }
+    multiPolygon(name)                      { return this._addColumn(name, "MULTIPOLYGON"); }
+    geometryCollection(name)               { return this._addColumn(name, "GEOMETRYCOLLECTION"); }
+
+    enum(name, ...values) {
+        const list = values.flat().map((v) => `'${v.replace(/'/g, "''")}'`).join(", ");
+        return this._addColumn(name, `ENUM(${list})`);
+    }
+
+    increments(name = "id") {
+        return this._addColumn(name, "INT").unsigned().primary().autoIncrement();
+    }
+
+    bigIncrements(name = "id") {
+        return this._addColumn(name, "BIGINT").unsigned().primary().autoIncrement();
+    }
+
+    timestamps() {
+        this._addColumn("created_at", "TIMESTAMP").default("CURRENT_TIMESTAMP");
+        const u = this._addColumn("updated_at", "TIMESTAMP").nullable();
+        u._onUpdateCurrentTimestamp = true;
+        return this;
+    }
+
+    // ── Table-level constraints & indexes ─────────────────────────────────────
+
+    uniqueComposite(...cols)              { this._compositeUniques.push(cols.flat()); return this; }
+    primaryComposite(...cols)             { this._compositePKs.push(cols.flat()); return this; }
+    addIndex(cols, name = null)           { this._indexes.push({ cols: [cols].flat(), name }); return this; }
+    fullText(cols, name = null)           { this._fullTextIndexes.push({ cols: [cols].flat(), name }); return this; }
+    spatialIndex(cols, name = null)       { this._spatialIndexes.push({ cols: [cols].flat(), name }); return this; }
+
+    // ── Table options ─────────────────────────────────────────────────────────
+
+    engine(name)      { this._engine  = name; return this; }
+    charset(charset)  { this._charset = charset; return this; }
+    collate(c)        { this._collate = c; return this; }
+    comment(text)     { this._comment = text; return this; }
+
+    // ── Internal ──────────────────────────────────────────────────────────────
+
+    _addColumn(name, type) {
+        const col = new ColumnBuilder(this, name, type);
+        this._columns.push(col);
+        return col;
+    }
+
+    toSQL() {
+        if (this._columns.length === 0)
+            throw new Error(`Table "${this._name}" has no columns defined.`);
+
+        const exists = this._ifNotExists ? "IF NOT EXISTS " : "";
+        const defs   = [];
+
+        for (const col of this._columns) {
+            let line = `    ${col.toSQL()}`;
+            if (col._onUpdateCurrentTimestamp) line += " ON UPDATE CURRENT_TIMESTAMP";
+            defs.push(line);
+        }
+
+        for (const cols of this._compositePKs)
+            defs.push(`    PRIMARY KEY (${cols.map(c => `\`${c}\``).join(", ")})`);
+
+        for (const cols of this._compositeUniques) {
+            const k = `uq_${this._name}_${cols.join("_")}`;
+            defs.push(`    UNIQUE KEY \`${k}\` (${cols.map(c => `\`${c}\``).join(", ")})`);
+        }
+
+        for (const { cols, name } of this._indexes) {
+            const k = name || `idx_${this._name}_${cols.join("_")}`;
+            defs.push(`    INDEX \`${k}\` (${cols.map(c => `\`${c}\``).join(", ")})`);
+        }
+
+        for (const { cols, name } of this._fullTextIndexes) {
+            const k = name || `ft_${this._name}_${cols.join("_")}`;
+            defs.push(`    FULLTEXT INDEX \`${k}\` (${cols.map(c => `\`${c}\``).join(", ")})`);
+        }
+
+        for (const { cols, name } of this._spatialIndexes) {
+            const k = name || `sp_${this._name}_${cols.join("_")}`;
+            defs.push(`    SPATIAL INDEX \`${k}\` (${cols.map(c => `\`${c}\``).join(", ")})`);
+        }
+
+        for (const col of this._columns) {
+            const fk = col.toFKSQL();
+            if (fk) defs.push(`    ${fk}`);
+        }
+
+        const options = [`ENGINE=${this._engine}`, `DEFAULT CHARSET=${this._charset}`, `COLLATE=${this._collate}`];
+        if (this._comment) options.push(`COMMENT='${this._comment.replace(/'/g, "''")}'`);
+
+        return (
+            `CREATE TABLE ${exists}\`${this._name}\` (\n` +
+            `${defs.join(",\n")}\n` +
+            `) ${options.join(" ")};`
+        );
+    }
+}
+
+// ─── Schema ───────────────────────────────────────────────────────────────────
+
+class Schema {
+
+    static #db = new Database();
+
+    /**
+     * CREATE TABLE IF NOT EXISTS
+     *
+     * @param {string}   name
+     * @param {Function} callback  - (table: TableBuilder) => void
+     * @returns {Promise<{ is_error, message, sql }>}
+     *
+     * @example
+     * await Schema.create('users', (t) => {
+     *     t.increments('id');
+     *     t.string('name').notNullable();
+     *     t.string('email', 100).unique();
+     *     t.boolean('active').default(1);
+     *     t.timestamps();
+     * });
+     */
+    static async create(name, callback) {
+        const table  = new TableBuilder(name);
+        callback(table);
+        const sql    = table.toSQL();
+        const result = await Schema.#db.query(sql);
+        result.message = result.is_error
+            ? `❗ Error creating table "${name}": ${result.message}`
+            : `✔ Table "${name}" created successfully.`;
+        result.sql = sql;
+        return result;
+    }
+
+    /**
+     * ALTER TABLE — add columns, modify columns, drop columns,
+     * rename columns, manage indexes and foreign keys.
+     *
+     * @param {string}   name
+     * @param {Function} callback  - (t: AlterBuilder) => void
+     * @returns {Promise<{ is_error, message, sql }>}
+     *
+     * @example
+     * await Schema.table('users', (t) => {
+     *     t.string('phone', 20).nullable().after('email');
+     *     t.boolean('verified').default(0);
+     *     t.dropColumn('old_field');
+     *     t.renameColumn('bio', 'about');
+     *     t.modify('name').string(null, 200).notNullable();
+     *     t.addIndex('phone');
+     *     t.addForeign('role_id', 'roles', 'id', 'CASCADE', 'CASCADE');
+     * });
+     */
+    static async table(name, callback) {
+        const alter  = new AlterBuilder(name);
+        callback(alter);
+        const sql    = alter.toSQL();
+        const result = await Schema.#db.query(sql);
+        result.message = result.is_error
+            ? `❗ Error altering table "${name}": ${result.message}`
+            : `✔ Table "${name}" altered successfully.`;
+        result.sql = sql;
+        return result;
+    }
+
+    /**
+     * DROP TABLE IF EXISTS
+     * @param {string} name
+     * @returns {Promise<{ is_error, message }>}
+     */
+    static async drop(name) {
+        const sql    = `DROP TABLE IF EXISTS \`${name}\`;`;
+        const result = await Schema.#db.query(sql);
+        result.message = result.is_error
+            ? `❗ Error dropping table "${name}": ${result.message}`
+            : `✔ Table "${name}" dropped successfully.`;
+        return result;
+    }
+
+    /**
+     * RENAME TABLE `from` TO `to`
+     * @param {string} from
+     * @param {string} to
+     * @returns {Promise<{ is_error, message }>}
+     */
+    static async rename(from, to) {
+        const sql    = `RENAME TABLE \`${from}\` TO \`${to}\`;`;
+        const result = await Schema.#db.query(sql);
+        result.message = result.is_error
+            ? `❗ Error renaming table "${from}": ${result.message}`
+            : `✔ Table "${from}" renamed to "${to}" successfully.`;
+        return result;
+    }
+
+    /**
+     * Check if a table exists
+     * @param {string} name
+     * @returns {Promise<boolean>}
+     */
+    static async hasTable(name) {
+        const result = await Schema.#db.query(
+            `SELECT TABLE_NAME FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?;`,
+            [name]
+        );
+        return !result.is_error && result.data.length > 0;
+    }
+
+    /**
+     * Check if a column exists in a table
+     * @param {string} table
+     * @param {string} column
+     * @returns {Promise<boolean>}
+     */
+    static async hasColumn(table, column) {
+        const result = await Schema.#db.query(
+            `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?;`,
+            [table, column]
+        );
+        return !result.is_error && result.data.length > 0;
+    }
+
+    /**
+     * Get all column names for a table in ordinal order
+     * @param {string} table
+     * @returns {Promise<string[]>}
+     */
+    static async getColumns(table) {
+        const result = await Schema.#db.query(
+            `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+             ORDER BY ORDINAL_POSITION;`,
+            [table]
+        );
+        return result.is_error ? [] : result.data.map((r) => r.COLUMN_NAME);
+    }
+}
+
+
+
+module.exports = { Schema, TableBuilder, AlterBuilder, ColumnBuilder };
