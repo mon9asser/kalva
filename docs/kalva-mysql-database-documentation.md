@@ -20,18 +20,7 @@ A singleton, pool-based MySQL connection class built on `mysql2`. Handles all lo
 
 ## Setup
 
-The app reads the `.env` file automatically. Here are the components for the MySQL driver:
-
-```bash
-#Database Setting
-DATABASE_DRIVER=mysql
-DATABASE_HOST=localhost
-DATABASE_USER=root
-DATABASE_PASSWORD=*******
-DATABASE_NAME=*******
-DATABASE_PORT=3306
-```
-
+ 
 Load `.env` once at your app entry point before anything else imports `Database`:
 
 
