@@ -27,12 +27,8 @@ This command lists all available Kalva commands.
 
 | Left Aligned | Center Aligned | Right Aligned |
 | :--- | :---: | ---: |
-| Content | Content | Content |
-| :--- | :---: | ---: |
-| Content | Content | Content |
-| :--- | :---: | ---: |
-| Content | Content | Content |
-| :--- | :---: | ---: |
-| Content | Content | Content |
-| :--- | :---: | ---: |
+| Content | Content | Content | 
+| Content | Content | Content | 
+| Content | Content | Content | 
+| Content | Content | Content | 
 | Content | Content | Content |
