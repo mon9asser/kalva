@@ -62,10 +62,42 @@ await Schema.create("users", (t) => {
 });
 ```
 
- 
+#### Table alteration
 
+That updates an existing table using a schema file inside the blueprint folder like `/blueprint/<schema-name>.js`.
 
+```bash
+kalva update-blueprint <schema-name>
+```
+You define only the changes you want to apply inside this file.
 
+For example
+```js
+// MySQL Layer
+await Schema.table("users", (t) => {
+
+    // add new columns
+    t.string("phone", 20).nullable().after("email");
+    t.boolean("verified").default(0);
+
+    // modify existing column
+    t.modify("name").string(null, 200).notNullable();
+
+    // add indexes
+    t.addIndex("phone");
+    t.addUniqueIndex(["email", "username"]);
+
+    // add foreign key
+    t.addForeign("role_id", "roles", "id", "CASCADE", "CASCADE");
+
+    // drop column
+    t.dropColumn("old_field");
+
+    // rename column
+    t.renameColumn("bio", "about");
+
+});
+```
 
 ## Kalva Framework Documentation 
 
