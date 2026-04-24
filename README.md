@@ -60,31 +60,11 @@ await Schema.create("users", (t) => {
     t.string("email", 100).unique();
     t.timestamps();
 });
-
-// MongoDB Layer
-await MongoSchema.create('User', (collection) => {
-
-});
-
-// PostgreSQL Layer
-..
-
-// SQLite Layer
-..
 ```
 
  
 
 
-## Help
-
-Run this command to view all Kalva CLI commands.
-
-```bash
-kalva --help
-```
-
-This command lists all available Kalva commands.
 
 
 ## Kalva Framework Documentation 
@@ -92,7 +72,7 @@ This command lists all available Kalva commands.
 ### MongoDB 
 
 ### MySQL   
-
+##### 1. Database Schema (Tables and Columns )
 **Columns (Add new columns)**
 
 | Function | Description |
@@ -225,6 +205,12 @@ await Schema.table("users", (t) => {
     t.renameColumn("bio", "about");
 
 });
+```
+
+##### 2. Eloquent ORM Query Builder
+
+
+Read more in MySQL Documentation for Kalva
 
 - [Database Doc](https://github.com/mon9asser/kalva/blob/master/docs/kalva-mysql-database-documentation.md)
 - [Blueprint Builder](https://github.com/mon9asser/kalva/blob/master/docs/kalva-mysql-schema-documentation.md)
@@ -234,3 +220,15 @@ await Schema.table("users", (t) => {
 ### PostgreSQL
 
 ### SQLite  
+
+
+
+## Help
+
+Run this command to view all Kalva CLI commands.
+
+```bash
+kalva --help
+```
+
+This command lists all available Kalva commands.
