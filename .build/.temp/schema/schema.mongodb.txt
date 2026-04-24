@@ -494,7 +494,7 @@ class CollectionBuilder {
 
 // ─── MongoSchema ──────────────────────────────────────────────────────────────
 
-class MongoSchema {
+class Schema {
     /**
      * Define and register a Mongoose model.
      *
@@ -788,4 +788,4 @@ class MongoSchema {
  */
 
  
-module.exports = { MongoSchema, CollectionBuilder, FieldBuilder };
+module.exports = { Schema, CollectionBuilder, FieldBuilder };
