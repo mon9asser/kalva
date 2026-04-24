@@ -1,86 +1,162 @@
+'use strict';
 const mysql = require('mysql2');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') }); 
 
+ 
+
+// ─── Database ─────────────────────────────────────────────────────────────────
+
 class Database {
 
-    static instance;
-    static dbInstance;
+    static #pool     = null;
+    static #instance = null;
 
     constructor() {
-         
-        if (Database.instance) {
-            return Database.instance;
-        } 
+        if (Database.#instance) return Database.#instance;
 
-        var settings = {};
-        if(process.env.DATABASE_HOST) {
-            settings.host = process.env.DATABASE_HOST;
-        }
-        if(process.env.DATABASE_USER ) {
-            settings.user = process.env.DATABASE_USER;
-        }
-        if(process.env.DATABASE_PASSWORD) {
-            settings.password = process.env.DATABASE_PASSWORD;
-        }
-        if(process.env.DATABASE_NAME) {
-            settings.database = process.env.DATABASE_NAME;
-        }
+        Database.#pool = mysql.createPool({
+            host:     process.env.DATABASE_HOST     || '127.0.0.1',
+            user:     process.env.DATABASE_USER     || 'root',
+            password: process.env.DATABASE_PASSWORD || '',
+            database: process.env.DATABASE_NAME     || '',
+            port:     process.env.DATABASE_PORT     || 3306,
 
-        if(process.env.DATABASE_PORT) {
-            settings.port = process.env.DATABASE_PORT;
-        }  
-       
-        Database.dbInstance = mysql.createPool(settings);  
-        Database.instance = this; 
+            // Pool tuning
+            waitForConnections: true,
+            connectionLimit:    Number(process.env.DATABASE_POOL_LIMIT) || 10,
+            queueLimit:         Number(process.env.DATABASE_QUEUE_LIMIT) || 0,
+        });
 
+        Database.#instance = this;
     }
-    
-    async is_connected() {
+
+    // ─── Health check ─────────────────────────────────────────────────────────
+    // Use at app startup only — not per query.
+
+    async isConnected() {
         return new Promise((resolve) => {
-            Database.dbInstance.getConnection((err, connection) => {
-                if (err) {
-                    resolve(false);
-                } else {
-                    connection.release();
-                    resolve(true);
-                }
+            Database.#pool.getConnection((err, connection) => {
+                if (err) { resolve(false); return; }
+                connection.release();
+                resolve(true);
             });
         });
     }
 
-   async query(sql, params = []) {
+    // ─── Core query ───────────────────────────────────────────────────────────
+
+    async query(sql, params = []) {
+        if (process.env.DB_DEBUG === 'true') {
+            console.log('[SQL]', sql, params);
+        }
+
         try {
-
-            var db = new Database();
-            const isConnected = await db.is_connected();
-            if (!isConnected) {
-                throw new Error("Database connection error");
-            }
-
-            const [rows] = await Database.dbInstance
-                .promise()
-                .query(sql, params);
-
-            return {
-                is_error: false,
-                message: "success",
-                data: rows
-            };
+            const [rows] = await Database.#pool.promise().query(sql, params);
+            return { is_error: false, message: 'success', data: rows };
 
         } catch (error) {
-
-            return {
-                is_error: true,
-                message: error.message,
-                data: []
-            };
-
+            console.error('[DB ERROR]', { sql, params, message: error.message });
+            return { is_error: true, message: error.message, data: [] };
         }
     }
- 
 
+    // ─── Raw connection (required for transactions) ───────────────────────────
+
+    async getConnection() {
+        return Database.#pool.promise().getConnection();
+    }
+
+    // ─── Transactions ─────────────────────────────────────────────────────────
+
+    /**
+     * Run a callback inside a transaction.
+     * Automatically commits on success, rolls back on any thrown error.
+     *
+     * @param {Function} callback  - receives a `tx` object with a `.query()` method
+     * @returns {Promise<any>}     - whatever the callback returns
+     *
+     * @example
+     * await db.transaction(async (tx) => {
+     *     await tx.query('INSERT INTO orders (user_id) VALUES (?)', [1]);
+     *     await tx.query('UPDATE wallets SET balance = balance - ? WHERE user_id = ?', [50, 1]);
+     * });
+     */
+    async transaction(callback) {
+        const connection = await this.getConnection();
+
+        try {
+            await connection.beginTransaction();
+
+            const tx = {
+                query: async (sql, params = []) => {
+                    if (process.env.DB_DEBUG === 'true') {
+                        console.log('[TX SQL]', sql, params);
+                    }
+                    const [rows] = await connection.query(sql, params);
+                    return { is_error: false, message: 'success', data: rows };
+                },
+            };
+
+            const result = await callback(tx);
+            await connection.commit();
+            return result;
+
+        } catch (error) {
+            await connection.rollback();
+            console.error('[TX ERROR]', error.message);
+            throw error;
+
+        } finally {
+            connection.release();
+        }
+    }
+
+    /**
+     * Manual transaction control — use when you need explicit begin/commit/rollback.
+     * Always call .release() in your finally block.
+     *
+     * @returns {{ query, beginTransaction, commit, rollback, release }}
+     *
+     * @example
+     * const tx = await db.beginTransaction();
+     * try {
+     *     await tx.query('INSERT INTO ...', [...]);
+     *     await tx.commit();
+     * } catch (e) {
+     *     await tx.rollback();
+     * } finally {
+     *     tx.release();
+     * }
+     */
+    async beginTransaction() {
+        const connection = await this.getConnection();
+        await connection.beginTransaction();
+
+        return {
+            query: async (sql, params = []) => {
+                if (process.env.DB_DEBUG === 'true') {
+                    console.log('[TX SQL]', sql, params);
+                }
+                const [rows] = await connection.query(sql, params);
+                return { is_error: false, message: 'success', data: rows };
+            },
+            commit:   () => connection.commit(),
+            rollback: () => connection.rollback(),
+            release:  () => connection.release(),
+        };
+    }
+
+    // ─── Pool stats (for monitoring) ──────────────────────────────────────────
+
+    poolStats() {
+        const p = Database.#pool;
+        return {
+            all:     p._allConnections?.length     ?? 0,
+            free:    p._freeConnections?.length    ?? 0,
+            queued:  p._connectionQueue?.length    ?? 0,
+        };
+    }
 }
-  
 
 module.exports = { Database };
