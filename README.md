@@ -26,8 +26,8 @@ This command lists all available Kalva commands.
 
 
 ### MySQL Database Documentation 
-- [Blueprint Builder](https://github.com/mon9asser/kalva/blob/master/kalva-mysql-schema-documentation.md)
-- [ORM & Query Builder](https://github.com/mon9asser/kalva/blob/master/kalva-mysql-orm-documentation.md) 
+- [Blueprint Builder](https://github.com/mon9asser/kalva/blob/master/docs/kalva-mysql-schema-documentation.md)
+- [ORM & Query Builder](https://github.com/mon9asser/kalva/blob/master/docs/kalva-mysql-orm-documentation.md) 
 
 
 ### Full Documentation for Database Model Class 
