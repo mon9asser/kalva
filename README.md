@@ -11,7 +11,7 @@ npm install -g kalva
 Run this command to create a new Kalva project.
 
 ```bash
-kalva create-project <name>
+kalva create-project <project-name>
 ```
 
 ## Help
@@ -25,5 +25,12 @@ kalva --help
 This command lists all available Kalva commands.
 
 
-### MySQL Drive 
-- [Documentation of MySQL Database Migration Builder](https://github.com/mon9asser/kalva/blob/master/kalva-mysql-documentation.md)
+### Full Documentation for Database Schema Types 
+- [ MySQL Database Blueprint Builder](https://github.com/mon9asser/kalva/blob/master/kalva-mysql-schema-documentation.md)
+- 
+
+### Full Documentation for the Eloquent ORM Query Builder Class
+- [MySQL Database ORM Query Builder](https://github.com/mon9asser/kalva/blob/master/kalva-mysql-orm-documentation.md) 
+
+
+### Full Documentation for Database Model Class 

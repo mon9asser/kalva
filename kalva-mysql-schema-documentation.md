@@ -1,4 +1,4 @@
-# Schema — MySQL Database Migration Builder
+# Schema — MySQL Database Blueprint Builder
 
 A fluent, chainable schema builder for MySQL. Provides `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`, and introspection helpers — all returning promise-based results with `{ is_error, message, sql }`.
 
