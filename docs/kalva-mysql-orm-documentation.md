@@ -1,4 +1,4 @@
-# MySqlModel — ORM & Query Builder
+# Model — ORM & Query Builder
 
 A Laravel-inspired, chainable MySQL ORM for Node.js. Every query starts from a static method on your model class and returns a `QueryBuilder` you can keep chaining before executing.
 
@@ -30,9 +30,9 @@ A Laravel-inspired, chainable MySQL ORM for Node.js. Every query starts from a s
 ## Defining a Model
 
 ```js
-const { MySqlModel } = require('./framework/database/model');
+const { Model } = require('./framework/database/model');
 
-class User extends MySqlModel {
+class User extends Model {
     static table      = 'users';
     static primaryKey = 'id';
     static fillable   = ['name', 'email', 'active'];  // mass-assignable
@@ -409,7 +409,7 @@ Define relations as `async` instance methods. Call them directly on an instance,
 This row has a FK pointing to a parent.
 
 ```js
-class Post extends MySqlModel {
+class Post extends Model {
     static table = 'posts';
 
     async user() {
@@ -426,7 +426,7 @@ const user = await post.user();
 This model's PK is referenced by a FK on a related table.
 
 ```js
-class User extends MySqlModel {
+class User extends Model {
     async profile() {
         return this.hasOne(Profile, 'user_id');
     }
@@ -438,7 +438,7 @@ const profile = await user.profile();
 ### hasMany
 
 ```js
-class User extends MySqlModel {
+class User extends Model {
     async posts() {
         return this.hasMany(Post, 'user_id');
     }
@@ -452,7 +452,7 @@ const posts = await user.posts();
 Many-to-many via a pivot/junction table.
 
 ```js
-class User extends MySqlModel {
+class User extends Model {
     async roles() {
         return this.belongsToMany(Role, 'user_roles', 'user_id', 'role_id');
     }
@@ -504,7 +504,7 @@ await post.eagerLoad('user');
 Define named query shortcuts on the model:
 
 ```js
-class User extends MySqlModel {
+class User extends Model {
     static scopes = {
         active: (qb)       => qb.where('active', 1),
         role:   (qb, role) => qb.where('role', role),
@@ -532,7 +532,7 @@ const users = await User.all();
 ## Migrate & Seed
 
 ```js
-class User extends MySqlModel {
+class User extends Model {
     static table    = 'users';
     static fillable = ['name', 'email', 'active'];
 
@@ -582,7 +582,7 @@ await qb.raw('UPDATE users SET last_seen = NOW() WHERE active = 1');
 
 ## Return Values
 
-Static CRUD methods return either a hydrated `MySqlModel` instance (or array), or for low-level operations a raw database result:
+Static CRUD methods return either a hydrated `Model` instance (or array), or for low-level operations a raw database result:
 
 ```js
 {
