@@ -25,12 +25,9 @@ kalva --help
 This command lists all available Kalva commands.
 
 
-### Full Documentation for Database Schema Types 
-- [ MySQL Database Blueprint Builder](https://github.com/mon9asser/kalva/blob/master/kalva-mysql-schema-documentation.md)
-- 
-
-### Full Documentation for the Eloquent ORM Query Builder Class
-- [MySQL Database ORM Query Builder](https://github.com/mon9asser/kalva/blob/master/kalva-mysql-orm-documentation.md) 
+### MySQL Database Documentation 
+- [Blueprint Builder](https://github.com/mon9asser/kalva/blob/master/kalva-mysql-schema-documentation.md)
+- [ORM & Query Builder](https://github.com/mon9asser/kalva/blob/master/kalva-mysql-orm-documentation.md) 
 
 
 ### Full Documentation for Database Model Class 
