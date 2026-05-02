@@ -1,0 +1,480 @@
+var {QueryBuilder} = require('./query-builder');  
+
+class Model {
+
+    static table;
+    static primary_key; 
+    static fillable   = []; 
+    query = null;
+    
+    static queryBuilder() {
+        this.query = new QueryBuilder(this);
+        return this.query; 
+    }
+
+    static where(column, value) {
+       if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.where(column, value);
+        return this;
+    }  
+
+    static whereOp(column, operator, value) {
+       if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.whereOp(column, operator, value);
+        return this;
+    }  
+
+    static whereOpColumns(left, right, operator = '=') {
+       if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.whereOpColumns(left, right, operator);
+        return this;
+    }  
+
+    static orWhere(column, value) { 
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.orWhere(column, value);
+        return this;
+    }
+
+    static orWhereOp(column, operator, value) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.orWhereOp(column, operator, value);
+        return this;
+    }
+
+     static andWhere(column, value) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.andWhere(column, value);
+        return this;
+    }
+
+    static whereIn(column, value) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.whereIn(column, value);
+        return this;
+    }
+
+    static whereNotIn(column, value) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.whereNotIn(column, value);
+        return this;
+    }
+
+    static whereNull(column) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.whereNull(column);
+        return this;
+    }
+
+    static whereNotNull(column) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.whereNotNull(column);
+        return this;
+    }
+
+    static whereBetween(column, min, max) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.whereBetween(column, min, max);
+        return this;
+    }
+
+    static whereNotBetween(column, min, max) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.whereNotBetween(column, min, max);
+        return this;
+    }
+
+    static whereLike(column, value, type = 'contains') {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.whereLike(column, value, type);
+        return this;
+    }
+
+    static whereILike(column, value, type = 'contains') {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.whereILike(column, value, type);
+        return this;
+    }
+
+    static whereRaw(sql, bindings = []) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.whereRaw(sql, bindings);
+        return this;
+    }
+
+    static select(columns = ['*']) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.select(columns);
+        return this;
+    }
+
+    static distinct() {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.distinct();
+        return this;
+    }
+
+     static orderBy(column, direction = 'ASC') {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.orderBy(column, direction);
+        return this;
+    }
+
+    static orderByDesc(column) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.orderByDesc(column);
+        return this;
+    }
+
+    static orderByAsc(column) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.orderByAsc(column);
+        return this;
+    }
+
+    static groupBy(column) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.groupBy(column);
+        return this;
+    }
+
+    static having(sql, bindings = []) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.having(sql, bindings);
+        return this;
+    }
+
+     static limit(number) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.limit(number);
+        return this;
+    }
+
+     static offset(number) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.offset(number);
+        return this;
+    }
+
+
+    static join(table, left, operator, right, type = 'INNER') {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.join(table, left, operator, right, type);
+        return this;
+    }
+
+    static leftJoin(table, left, operator, right) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.leftJoin(table, left, operator, right);
+        return this;
+    }
+
+    static rightJoin(table, left, operator, right) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.rightJoin(table, left, operator, right);
+        return this;
+    }
+
+    static innerJoin(table, left, operator, right) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.innerJoin(table, left, operator, right);
+        return this;
+    }
+
+    static outerJoin(table, left, operator, right) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.outerJoin(table, left, operator, right);
+        return this;
+    }
+
+    static fullJoin(table, left, operator, right) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.fullJoin(table, left, operator, right);
+        return this;
+    }
+
+   
+    static with(col, relation, type='LEFT'){
+        if (!this.query) 
+            this.query = this.queryBuilder(); 
+
+        return this.query.with(col, relation, type);
+    }
+
+    static withCount(col, relation){
+
+        if (!this.query) 
+            this.query = this.queryBuilder(); 
+
+        return this.query.withCount(col, relation);
+    }
+
+    static find() {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.find();
+        return this;
+    }
+
+    static findById(id) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.findById(id);
+        return this;
+    }
+
+    static findOrFail(id) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.findOrFail(id);
+        return this;
+    }
+
+    static findBy(column, value) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.findBy(column, value);
+        return this;
+    }
+
+    static findOne(condition) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.findOne(condition);
+        return this;
+    }
+
+    static findAll(column, value) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.findAll(column, value);
+        return this;
+    }
+
+    static all() {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.all();
+        return this;
+    }
+    
+    static first() {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.first();
+        return this;
+    }
+
+    static last() {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.last();
+        return this;
+    }
+    
+    static paginate(page = 1, perPage = 25) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        var result = this.query.paginate(page, perPage );
+        
+        return this;
+    }
+
+    static count(column, alias = null) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.count(column, alias );
+        return this;
+    }
+
+    static sum(column, alias = null) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.sum(column, alias );
+        return this;
+    }
+
+    static avg(column, alias = null) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.avg(column, alias );
+        return this;
+    }
+
+    static min(column, alias = null) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.min(column, alias );
+        return this;
+    }
+
+    static max(column, alias = null) {
+        if (!this.query) 
+        this.query = this.queryBuilder();  
+        
+        this.query.max(column, alias );
+        return this;
+    }
+
+
+     static create(data){
+
+        if (!this.query) 
+            this.query = this.queryBuilder(); 
+
+        return this.query.create(data);
+    }
+
+    static update(byId, data){
+
+        if (!this.query) 
+            this.query = this.queryBuilder(); 
+
+        return this.query.update(byId, data);
+    } 
+
+    static updateMany(data){
+
+        if (!this.query) 
+            this.query = this.queryBuilder(); 
+
+        return this.query.updateMany(data);
+    } 
+
+    static deleteById(id){
+
+        if (!this.query) 
+            this.query = this.queryBuilder(); 
+
+        return this.query.deleteById(id);
+    } 
+
+    static deleteBy(data){
+
+        if (!this.query) 
+            this.query = this.queryBuilder(); 
+
+        return this.query.deleteBy(data);
+    } 
+
+    static delete(){
+
+        if (!this.query) 
+            this.query = this.queryBuilder(); 
+
+        return this.query.delete();
+    } 
+
+    static deleteMany(objet){
+
+        if (!this.query) 
+            this.query = this.queryBuilder(); 
+
+        return this.query.deleteMany(objet);
+    } 
+
+    static truncate(){
+
+        if (!this.query) 
+            this.query = this.queryBuilder(); 
+
+        return this.query.truncate();
+    } 
+
+    // ---------------------
+
+    static async get(col = ['*']){
+        if (!this.query) 
+            this.query = this.queryBuilder(); 
+
+        return this.query.get(col);
+    }
+ 
+    static async save(){
+        if (!this.query) 
+            this.query = this.queryBuilder(); 
+
+        return this.query.save();
+    }
+    
+
+} 
+
+module.exports = {Model};
+ 
+ 
+ 

@@ -6,8 +6,8 @@ const { program } = require("commander");
 const fs = require("fs");
 const inquirer = require("inquirer");
 const path = require("path");
-const { db_questions } = require('./.build/questions');
-const { kalva_print } = require('./.build/print');
+const { db_questions } = require('./build/system/questions');
+const { kalva_print } = require('./build/system/print');
 
 class RunTime {
 
@@ -16,6 +16,8 @@ class RunTime {
     scripts = {};
     current_db = null;
     database_version_command = null; 
+
+    is_run= true;
 
     constructor() {
         
@@ -121,16 +123,22 @@ class RunTime {
                 type: "list",
                 name: "database",
                 message: chalk.blue("Choose database:"),
-                choices: ["sqlite", "mysql", "postgres", "mongodb"]
+                choices: [ "mysql", "others" ] // [ "sqlite", "postgres", "mongodb"]
             },
         ]);
 
+        
+
         switch(answer.database) {
-            case 'sqlite':
-                await this.create_sqlite();
-                break;
             case 'mysql':
                 await this.create_mysql();
+                break;
+            case 'others':
+                await this.show_sorry_message();
+                break;
+            /*
+            case 'sqlite':
+                await this.create_sqlite();
                 break;
             case 'postgres':
                 await this.create_postgres();
@@ -138,7 +146,12 @@ class RunTime {
             case 'mongodb':
                 await this.create_mongodb();
                 break;
+            */
         }
+
+        if( this.is_run === false ) {
+            return;
+        } 
 
         // create other dependecies
         await this.other_dependencies()
@@ -161,6 +174,11 @@ class RunTime {
 
         // install
         await this.install_packages();
+    }
+
+    show_sorry_message () {
+        this.is_run = false;
+        return console.log('\n',chalk.red.bold("Unfortunately, MySQL is the only supported database for now.", '\n'));
     }
 
     async create_sqlite(){
@@ -296,6 +314,7 @@ class RunTime {
  
     async database_files() {   
 
+
         const proj_folder = path.join(process.cwd(), this.project_name);
         
         var env = path.join(proj_folder, ".env");
@@ -313,22 +332,27 @@ class RunTime {
         var framework_client = path.join(framework_client, "database");
         if(! fs.existsSync(framework_client)) {
             fs.mkdirSync(framework_client);
-        } 
-        
+        }  
+
         var model_temp = {
-            _from: path.join(__dirname, `.build`, `.temp`, `orm`, `model.${this.current_db}.txt`),
+            _from: path.join(__dirname, `build`, `${this.current_db}`, `model.txt`),
             _to:  path.join(framework_client, 'model.js')
         }
         var database_temp = {
-            _from: path.join(__dirname, `.build`, `.temp`, `database`, `database.${this.current_db}.txt`),
+            _from: path.join(__dirname, `build`, `${this.current_db}`, `database.txt`),
             _to: path.join(framework_client, 'database.js')
         }
         var schema_temp = {
-            _from: path.join(__dirname, `.build`, `.temp`, `schema`, `schema.${this.current_db}.txt`),
+            _from: path.join(__dirname, `build`,`${this.current_db}`, `schema.txt`),
             _to: path.join(framework_client, 'schema.js')
         }
+
+        var query_temp = {
+            _from: path.join(__dirname, `build`,`${this.current_db}`, `query-builder.txt`),
+            _to: path.join(framework_client, 'query-builder.js')
+        }
         
-        if( ! fs.existsSync(database_temp._from) || !fs.existsSync(model_temp._from) || !fs.existsSync(schema_temp._from) ) {
+        if( ! fs.existsSync(database_temp._from) || !fs.existsSync(model_temp._from) || !fs.existsSync(schema_temp._from) || !fs.existsSync(query_temp._from) ) {
             return console.log(`\n`,'🚫 ' , chalk.red.bold('Error: Template paths do not exist. Submit a ticket for this issue.'),`\n`);
         }
         
@@ -348,6 +372,12 @@ class RunTime {
         fs.writeFileSync(
             schema_temp._to,
             fs.readFileSync(schema_temp._from, 'utf8')
+        );
+
+        // crate query builder file
+        fs.writeFileSync(
+            query_temp._to,
+            fs.readFileSync(query_temp._from, 'utf8')
         );
 
         

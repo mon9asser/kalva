@@ -1,0 +1,139 @@
+
+// --------------- Get Data 
+(async() => {
+    /*
+    var where = await Model.where('id', 10).get('name');
+    var whereOp = await Model.whereOp('age', '<=', 10).get(['name', 'age']);
+    var whereOpColumns = await Model.whereOpColumns('age', 'uder', '=').get(['name', 'age']);
+    var orWhere = await Model.where('id', 10).orWhere('age', 10).get();
+    var orWhereOp = await Model.where('id', 10).orWhereOp('age', '<=', 10).get();
+    var andWhere = await Model.where('id', 10).andWhere('age', 10).get();
+    var whereIn = await Model.where('id', 10).whereIn('age', [10, 20, 30]).get();
+    var whereNotIn = await Model.where('id', 10).whereNotIn('age', [10, 20, 30]).get();
+    var whereNull= await Model.where('id', 10).whereNull('age').get();
+    var whereNotNull= await Model.where('id', 10).whereNotNull('age').get();
+    var whereBetween= await Model.where('id', 10).whereBetween('age', 100, 1000).get();
+    var whereNotBetween= await Model.where('id', 10).whereNotBetween('age', 100, 1000).get();
+    var whereLike= await Model.where('id', 10).whereLike('age', 100).get();
+    var whereILike= await Model.where('id', 10).whereILike('age', 100).get();
+    var whereRaw= await Model.where('id', 10).whereRaw('and age = ?', [100]).get();
+    var selected = await Model.select(['name', 'email', 'montasser']).get();
+    var distinct = await Model.select(['name', 'email', 'montasser']).distinct().get();
+    var orderBy  = await Model.select(['name', 'email', 'montasser']).orderBy('name').get();
+    var orderByDesc  = await Model.select(['name', 'email', 'montasser']).orderByDesc('name').get();
+    var orderByAsc  = await Model.select(['name', 'email', 'montasser']).orderByAsc('name').get();
+    var groupBy  = await Model.select(['name', 'email', 'montasser']).groupBy('name').get();
+    var having  = await Model.select(['name', 'email', 'montasser']).having('COUNT(*) > ?', 10).get();
+    var limit = await Model.where('id', 10).whereIn('age', [10, 20, 30]).limit(10).get();
+    var offset =  awaitModel.where('id', 10).whereIn('age', [10, 20, 30]).offset(5).get();
+    var join = await Model.where('id', 10).whereIn('age', [10, 20, 30]).join('payments', 'user_id', '=', 'id', 'OUTER').offset(5).get();
+    var leftJoin = await Model.where('id', 10).whereIn('age', [10, 20, 30]).leftJoin('orders', 'user_id', '=', 'id').get(); 
+    var rightJoin = await Model.where('id', 10).whereIn('age', [10, 20, 30]).rightJoin('comments', 'user_id', '=', 'id').get(); 
+    var innerJoin = await Model.where('id', 10).whereIn('age', [10, 20, 30]).innerJoin('transactions', 'user_id', '=', 'id').get(); 
+    var outerJoin = await Model.where('id', 10).whereIn('age', [10, 20, 30]).outerJoin('banks', 'user_id', '=', 'id').get(); 
+    var fullJoin = await Model.where('id', 10).whereIn('age', [10, 20, 30]).fullJoin('emails', 'user_id', '=', 'id').get(); 
+    var withTable = await Model.where('id', 10).with('user_id', ['childrens', 'foods']).get();
+    var withCount = await Model.select(["job"]).where('id', 10).withCount('user_id', ['clothes']).get();
+    var find = await Model.find().get();
+    var findById = await Model.findById(10).get();
+    var findOrFail = await Model.findOrFail(10).get();
+    var findBy = await Model.findBy('name', 'tarek').get();
+    var findOne = await Model.findOne({name: 'tarek'}).get();
+    var findAll = await Model.findAll('name', 'montasser').where('age', 10).get();
+    var all = await Model.all().get();
+    var first = await Model.first().get();
+    var last = await Model.last().get();
+    var last = await Model.paginate().get();
+    var count = await Model.count('price').get();
+    var sum = await Model.sum('price').get();
+    var avg = await Model.avg('price').get();
+    var min = await Model.min('price').get();
+    var max = await Model.max('price').get(); 
+    var create =  await Model.create({
+        name: 'David',
+        age: 35
+    });
+    var createMany = await Model.create([
+        {
+            name: 'Hany',
+            job: "Engineer"
+        },
+        {
+            name: 'Moneer',
+            job: "Web Developer"
+        }
+    ]);
+
+    var update = await Model.update(25, {
+        name: "Modeer Sabet",
+        age: 35
+    })
+
+    var updateMany = await Model.updateMany({
+        name: "Modeer Sabet",
+        age: 35
+    }).whereBetween('age', 100, 1000).save();
+
+    var remove = await Model.delete(1000);
+    var removeMany = await Model.deleteMany({
+        name: 'ahmed',
+        id: 25
+    });
+    var truncate = await Model.truncate();
+  
+ 
+   var create =  await Model.create({
+        name: 'Montasser',
+        age: 35
+    });
+ 
+    */
+
+})()
+
+
+
+
+// Insert 30,000 records for one time
+
+var { Model } = require("./../build/model");
+
+class Transaction extends Model {
+    static table = 'transactions';
+    static primary_key = 'id';
+
+    static fillable = [
+        'order_id',
+        'amount',
+        'payment_method',
+        'status',
+        'reference'
+    ];
+}
+ 
+
+(async function(){
+    const methods = ['card', 'cash', 'wallet'];
+    const statuses = ['pending', 'success', 'failed'];
+
+    const CHUNK_SIZE = 1000;
+    const TOTAL = 30000;
+
+    for (let i = 0; i < TOTAL; i += CHUNK_SIZE) {
+        const batch = [];
+
+        for (let j = 0; j < CHUNK_SIZE && (i + j) < TOTAL; j++) {
+            const orderId = Math.floor(Math.random() * 3000) + 1;
+
+            batch.push({
+                order_id: orderId,
+                amount: Number((Math.random() * 1000 + 5).toFixed(2)),
+                payment_method: methods[Math.floor(Math.random() * methods.length)],
+                status: statuses[Math.floor(Math.random() * statuses.length)],
+                reference: `TXN-${Date.now()}-${i + j}`
+            });
+        }
+
+        await Transaction.create(batch);
+    }
+})();

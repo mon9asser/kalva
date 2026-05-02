@@ -785,4 +785,5 @@ class Schema {
 
 
 
+
 module.exports = { Schema, TableBuilder, AlterBuilder, ColumnBuilder };

@@ -1,0 +1,3509 @@
+const { Database } = require("./database");
+
+ 
+class QueryBuilder{
+    
+    constructor(model) {
+
+        // Basics 
+        this._model = model;
+        this._table = model.table;
+        this._pk = model.primary_key; 
+        this._fillable = model.fillable;
+        
+        // Select Columns
+        this._selected = []; 
+        this._distinct = false;
+
+        this._update = [];
+        this._insert = [];
+        this._delete = [];
+        this._wheres = [];
+        this._action = null;
+
+        this._joins    = [];
+
+        this._orders   = [];
+        this._groups   = [];
+        this._havings  = []; 
+
+        this._limit_val  = null;
+        this._offset_val = null;
+        this._joined_table = null;
+
+        this._withs      = [];
+        this._with_counts = [];
+
+        this.allowed_operators = ["=", ">", "<", ">=", "<=", "<>"];
+
+        this._type = null;
+        this._paginate = null;
+    }
+
+    
+    #__run_database() {
+        return new Database();
+    }
+    /* Securing Layer */
+    #__safeIdent(name) {
+
+        if (!/^[a-zA-Z0-9_]+$/.test(name)) {
+            throw new Error("Invalid identifier");
+        }
+        return name;
+
+    }
+
+
+    // ===================================================================================
+    // ================================ Select and Quer ==================================
+    // ===================================================================================
+   /**
+     * Set SELECT columns for the query.
+     *
+     * @param {string|string[]|number} [cols='*']
+     * Possible values:
+     * - string: column name → 'name'
+     * - array: list of columns → ['name', 'email']
+     * - nested array: [['name', 'email'], 'age']
+     * - number: raw value → 1
+     * - SQL function: 'COUNT(id) as total'
+     *
+     * Usage:
+     * - Auto prefixes column with table name if no dot exists
+     * - Keeps SQL functions and raw values unchanged
+     *
+     * @example
+     * query.__select(['id', 'name', 'COUNT(orders.id) as total']);
+     * // SELECT users.id, users.name, COUNT(orders.id) as total
+     *
+     * @returns {this}
+     */
+    #__select(cols = '*') {
+        
+        if(this._type !== 'insert_select') {
+            this._type = 'select';
+        } 
+
+        var columns = [];
+        if( Array.isArray(cols) ) {
+            columns = cols;
+        }  else if ( typeof cols =='string' ) {
+            columns = [cols];
+        } else if (typeof cols === 'number') {
+            columns = [String(cols)];
+        } 
+        else {
+            throw new Error("The passed parameter is not an array or string");
+        }
+        
+        
+        var new_cols = columns.flat().map(colm => {
+
+            var is_func = /[( ]/.test(colm);
+            
+            if( is_func ) {
+                return colm;
+            }
+
+           isNaN(parseInt(colm))
+            
+            var colum = isNaN(parseInt(colm)) ? colm.includes('.') ? colm: `${this._table}.${colm}`: colm;
+
+            return colum;
+
+        });
+
+        this._selected.push(...new_cols);
+        
+        return this;
+    }
+    
+    /**
+     * Add a WHERE condition to the query.
+     *
+     * @param {string} sql
+     * Column name or full column reference.
+     * Examples:
+     * - 'name'
+     * - 'users.email'
+     *
+     * @param {*} binding
+     * Value to bind to the placeholder (?).
+     *
+     * @param {string} [connector='AND']
+     * Logical connector for chaining conditions.
+     * Possible values:
+     * - 'AND'
+     * - 'OR'
+     *
+     * Usage:
+     * - Auto prefixes column with table name if no dot exists
+     * - First condition ignores connector
+     * - Uses parameter binding with '?'
+     *
+     * @example
+     * query.__where('name', 'montasser');
+     * // WHERE users.name = ?
+     *
+     * @example
+     * query.__where('email', 'test@mail.com')
+     *      .__where('age', 20, 'OR');
+     * // WHERE users.email = ? OR users.age = ?
+     *
+     * @returns {this}
+     */
+    #__where(sql, binding, connector= 'AND') {
+        
+         const column = sql.includes('.')
+                ? sql
+                : `${this._table}.${sql.trim()}`;
+
+        var where = `${connector} ${column} = ?`; 
+
+        if(!this._wheres.length) {
+            where = `${column} = ?`;
+        }
+        
+        var obj = {sql: where, binding: [binding]};
+
+        this._wheres.push(obj);
+
+        return this;
+    }
+
+    /**
+     * Add a WHERE LIKE condition to the query.
+     *
+     * @param {string} col
+     * Column name or full column reference.
+     * Examples:
+     * - 'name'
+     * - 'users.email'
+     *
+     * @param {string} value
+     * Value used to build the LIKE pattern.
+     *
+     * @param {string} [type='contains']
+     * Match type:
+     * - 'contains' → %value%
+     * - 'starts'   → value%
+     * - 'ends'     → %value
+     *
+     * @param {string} [word='LIKE']
+     * SQL operator:
+     * - 'LIKE'
+     * - 'NOT LIKE'
+     *
+     * @param {string} [connector='AND']
+     * Logical connector:
+     * - 'AND'
+     * - 'OR'
+     *
+     * Usage:
+     * - Auto prefixes column with table name if no dot exists
+     * - Adds connector only if previous conditions exist
+     * - Builds pattern based on type
+     * - Uses parameter binding with '?'
+     *
+     * @example
+     * query.__whereLike('name', 'mont');
+     * // WHERE users.name LIKE '%mont%'
+     *
+     * @example
+     * query.__whereLike('email', 'admin', 'starts');
+     * // WHERE users.email LIKE 'admin%'
+     *
+     * @example
+     * query.__whereLike('name', 'test', 'ends', 'NOT LIKE', 'OR');
+     * // WHERE users.name NOT LIKE '%test'
+     *
+     * @returns {this}
+     */
+    #__whereLike(col, value, type = 'contains', word = 'LIKE', connector= 'AND') {
+
+        var colum = col.includes('.') ? col: `${this._table}.${col}`;
+        var sql = ``;
+        
+        if(this._wheres.length) {
+            sql += `${connector} `;
+        }
+        sql += `${colum} ${word} ?`;
+
+        var flags = ``;
+        var binding = [];
+        
+        switch(type) {
+            case 'contains':
+                flags = `%${value}%`;
+                break;
+            case 'starts':
+                flags = `${value}%`;
+                break;
+            case 'ends':
+                flags = `%${value}`;
+                break;
+        }
+        binding.push(flags);
+
+        this._wheres.push({
+            sql, binding
+        });
+
+        return this; 
+        
+    }
+
+    /**
+     * Add a WHERE IN condition to the query.
+     *
+     * @param {string} col
+     * Column name or full column reference.
+     * Examples:
+     * - 'id'
+     * - 'users.id'
+     *
+     * @param {Array|*|Function|QueryBuilder} values
+     * Possible values:
+     * - array → [1, 2, 3]
+     * - single value → 1 (converted to [1])
+     * - function → receives a subquery builder
+     * - QueryBuilder instance → used as subquery
+     *
+     * @param {string} [connector='AND']
+     * Logical connector:
+     * - 'AND'
+     * - 'OR'
+     *
+     * Usage:
+     * - Auto prefixes column with table name if no dot exists
+     * - Adds connector only if previous conditions exist
+     * - Supports array values and subqueries
+     * - Uses parameter binding with '?'
+     *
+     * @example
+     * query.__whereIn('id', [1, 2, 3]);
+     * // WHERE users.id IN (?, ?, ?)
+     *
+     * @example
+     * query.__whereIn('id', 1);
+     * // WHERE users.id IN (?)
+     *
+     * @example
+     * query.__whereIn('id', (q) => {
+     *     q.__select('user_id').from('orders');
+     * });
+     * // WHERE users.id IN (SELECT user_id FROM orders)
+     *
+     * @example
+     * const sub = new QueryBuilder().__select('user_id').from('orders');
+     * query.__whereIn('id', sub);
+     * // WHERE users.id IN (SELECT user_id FROM orders)
+     *
+     * @returns {this}
+     */
+    #__whereIn(col, values, connector = 'AND') {
+
+        const column = col.includes('.') ? col : `${this._table}.${col}`;
+        let sql = '';
+        let bindings = [];
+
+        if (this._wheres.length) {
+            sql += `${connector} `;
+        }
+
+        // Subquery (callback)
+        if (typeof values === 'function') {
+
+            const subQuery = new QueryBuilder({ _table: '', _primary_key: '' });
+
+            values(subQuery);
+
+            const { sql: subSql, binding: subBindings } = subQuery.build();
+
+            sql += `${column} IN (${subSql})`;
+            bindings.push(...subBindings);
+        }
+
+        // Subquery (builder instance)
+        else if (values instanceof QueryBuilder) {
+
+            const { sql: subSql, binding: subBindings } = values.build();
+
+            sql += `${column} IN (${subSql})`;
+            bindings.push(...subBindings);
+        }
+
+        // Array
+        else {
+
+            const array = Array.isArray(values) ? values : [values];
+            const placeholders = array.map(() => '?').join(',');
+
+            sql += `${column} IN (${placeholders})`;
+            bindings.push(...array);
+        }
+
+        this._wheres.push({ sql, binding: bindings });
+
+        return this;
+    }
+
+    /**
+     * Add a WHERE NOT IN condition to the query.
+     *
+     * @param {string} col
+     * Column name or full column reference.
+     * Examples:
+     * - 'id'
+     * - 'users.id'
+     *
+     * @param {Array|*|Function|QueryBuilder} values
+     * Possible values:
+     * - array → [1, 2, 3]
+     * - single value → 1 (converted to [1])
+     * - function → receives a subquery builder
+     * - QueryBuilder instance → used as subquery
+     *
+     * @param {string} [connector='AND']
+     * Logical connector:
+     * - 'AND'
+     * - 'OR'
+     *
+     * Usage:
+     * - Auto prefixes column with table name if no dot exists
+     * - Adds connector only if previous conditions exist
+     * - Supports array values and subqueries
+     * - Uses parameter binding with '?'
+     *
+     * @example
+     * query.__whereNotIn('id', [1, 2, 3]);
+     * // WHERE users.id NOT IN (?, ?, ?)
+     *
+     * @example
+     * query.__whereNotIn('id', 1);
+     * // WHERE users.id NOT IN (?)
+     *
+     * @example
+     * query.__whereNotIn('id', (q) => {
+     *     q.__select('user_id').from('orders');
+     * });
+     * // WHERE users.id NOT IN (SELECT user_id FROM orders)
+     *
+     * @example
+     * const sub = new QueryBuilder().__select('user_id').from('orders');
+     * query.__whereNotIn('id', sub);
+     * // WHERE users.id NOT IN (SELECT user_id FROM orders)
+     *
+     * @returns {this}
+     */
+    #__whereNotIn(col, values, connector = 'AND') {
+
+        const column = col.includes('.') ? col : `${this._table}.${col}`;
+        let sql = '';
+        let bindings = [];
+
+        if (this._wheres.length) {
+            sql += `${connector} `;
+        }
+
+        // Subquery (callback)
+        if (typeof values === 'function') {
+
+            const subQuery = new QueryBuilder({ _table: '', _primary_key: '' });
+
+            values(subQuery);
+
+            const { sql: subSql, binding: subBindings } = subQuery.build();
+
+            sql += `${column} NOT IN (${subSql})`;
+            bindings.push(...subBindings);
+        }
+
+        // Subquery (builder instance)
+        else if (values instanceof QueryBuilder) {
+
+            const { sql: subSql, binding: subBindings } = values.build();
+
+            sql += `${column} NOT IN (${subSql})`;
+            bindings.push(...subBindings);
+        }
+
+        // Array
+        else {
+
+            const array = Array.isArray(values) ? values : [values];
+            const placeholders = array.map(() => '?').join(',');
+
+            sql += `${column} NOT IN (${placeholders})`;
+            bindings.push(...array);
+        }
+
+        this._wheres.push({ sql, binding: bindings });
+
+        return this;
+    }
+    
+    /**
+     * Add a WHERE BETWEEN condition to the query.
+     *
+     * @param {string} col
+     * Column name or full column reference.
+     * Examples:
+     * - 'age'
+     * - 'users.created_at'
+     *
+     * @param {Array} range
+     * Must be an array with exactly two values:
+     * - [min, max]
+     *
+     * @param {string} [connector='AND']
+     * Logical connector:
+     * - 'AND'
+     * - 'OR'
+     *
+     * @throws {Error}
+     * Throws when range is not an array with exactly two values.
+     *
+     * Usage:
+     * - Auto prefixes column with table name if no dot exists
+     * - Adds connector only if previous conditions exist
+     * - Uses parameter binding with '?'
+     *
+     * @example
+     * query.__whereBetween('age', [18, 30]);
+     * // WHERE users.age BETWEEN ? AND ?
+     *
+     * @example
+     * query.__whereBetween('created_at', ['2024-01-01', '2024-12-31'], 'OR');
+     * // WHERE users.created_at BETWEEN ? AND ?
+     *
+     * @returns {this}
+     */
+    #__whereBetween(col, range, connector = 'AND') {
+
+        if (!Array.isArray(range) || range.length !== 2) {
+            throw new Error('whereBetween expects [min, max] in range');
+        }
+
+        const column = col.includes('.') ? col : `${this._table}.${col}`;
+
+        let sql = '';
+
+        if (this._wheres.length) {
+            sql += `${connector} `;
+        }
+
+        sql += `${column} BETWEEN ? AND ?`;
+
+        this._wheres.push({
+            sql,
+            binding: [range[0], range[1]]
+        });
+
+        return this;
+    }
+
+    /**
+     * Add a WHERE NOT BETWEEN condition to the query.
+     *
+     * @param {string} col
+     * Column name or full column reference.
+     * Examples:
+     * - 'age'
+     * - 'users.created_at'
+     *
+     * @param {Array} range
+     * Must be an array with exactly two values:
+     * - [min, max]
+     *
+     * @param {string} [connector='AND']
+     * Logical connector:
+     * - 'AND'
+     * - 'OR'
+     *
+     * @throws {Error}
+     * Throws when range is not an array with exactly two values.
+     *
+     * Usage:
+     * - Auto prefixes column with table name if no dot exists
+     * - Adds connector only if previous conditions exist
+     * - Uses parameter binding with '?'
+     *
+     * @example
+     * query.__whereNotBetween('age', [18, 30]);
+     * // WHERE users.age NOT BETWEEN ? AND ?
+     *
+     * @example
+     * query.__whereNotBetween('created_at', ['2024-01-01', '2024-12-31'], 'OR');
+     * // WHERE users.created_at NOT BETWEEN ? AND ?
+     *
+     * @returns {this}
+     */
+    #__whereNotBetween(col, range, connector = 'AND') {
+
+        if (!Array.isArray(range) || range.length !== 2) {
+            throw new Error('whereBetween expects [min, max] in range');
+        }
+
+        const column = col.includes('.') ? col : `${this._table}.${col}`;
+
+        let sql = '';
+
+        if (this._wheres.length) {
+            sql += `${connector} `;
+        }
+
+        sql += `${column} NOT BETWEEN ? AND ?`;
+
+        this._wheres.push({
+            sql,
+            binding: [range[0], range[1]]
+        });
+
+        return this;
+    }
+    
+    /** 
+     * NOTE ===>>>>> (THIS METHOD IS DEPRECATED FOR NOW)
+     * Add a WHERE EXISTS condition using a subquery.
+     *
+     * @param {Function} callback
+     * Function that receives a QueryBuilder instance to build the subquery.
+     *
+     * @param {string} [connector='AND']
+     * Logical connector:
+     * - 'AND'
+     * - 'OR'
+     *
+     * @throws {Error}
+     * Throws when callback is not a function.
+     *
+     * Usage:
+     * - Adds connector only if previous conditions exist
+     * - Builds a subquery using the callback
+     * - Wraps subquery with EXISTS (...)
+     * - Uses parameter binding from the subquery
+     *
+     * @example
+     * query.__whereExists((q) => {
+     *     q.__select('*').from('orders').__where('orders.user_id', 1);
+     * });
+     * // WHERE EXISTS (SELECT * FROM orders WHERE orders.user_id = ?)
+     *
+     * @returns {this}
+     */ 
+    #__whereExists(callback, connector = 'AND') {
+
+        if (typeof callback !== 'function') {
+            throw new Error('whereExists expects a callback');
+        }
+
+        let sql = '';
+        let bindings = [];
+
+        if (this._wheres.length) {
+            sql += `${connector} `;
+        }
+
+        const subQuery = new QueryBuilder({ table: '', primary_key: '' });
+
+        callback(subQuery);
+
+       let result = subQuery.build(); 
+
+        sql += `EXISTS (${result.sql})`;
+        bindings.push(...result.binding);
+
+        this._wheres.push({ sql, binding: bindings });
+
+        return this;
+    }
+
+    /**
+     * NOTE ===>>>>> (THIS METHOD IS DEPRECATED FOR NOW)
+     * Add a WHERE NOT EXISTS condition using a subquery.
+     *
+     * @param {Function} callback
+     * Function that receives a QueryBuilder instance to build the subquery.
+     *
+     * @param {string} [connector='AND']
+     * Logical connector:
+     * - 'AND'
+     * - 'OR'
+     *
+     * @throws {Error}
+     * Throws when callback is not a function.
+     *
+     * Usage:
+     * - Adds connector only if previous conditions exist
+     * - Builds a subquery using the callback
+     * - Wraps subquery with NOT EXISTS (...)
+     * - Uses parameter binding from the subquery
+     *
+     * @example
+     * query.__whereNotExists((q) => {
+     *     q.__select('*').from('orders').__where('orders.user_id', 1);
+     * });
+     * // WHERE NOT EXISTS (SELECT * FROM orders WHERE orders.user_id = ?)
+     *
+     * @returns {this}
+     */
+    #__whereNotExists(callback, connector = 'AND') {
+
+        if (typeof callback !== 'function') {
+            throw new Error('whereExists expects a callback');
+        }
+
+        let sql = '';
+        let bindings = [];
+
+        if (this._wheres.length) {
+            sql += `${connector} `;
+        }
+
+        const subQuery = new QueryBuilder({ table: '', primary_key: '' });
+
+        callback(subQuery);
+
+       let result = subQuery.build(); 
+
+        sql += `NOT EXISTS (${result.sql})`;
+        bindings.push(...result.binding);
+
+        this._wheres.push({ sql, binding: bindings });
+
+        return this;
+    }
+
+    /**
+     * Add a WHERE IS NULL condition to the query.
+     *
+     * @param {string} col
+     * Column name or full column reference.
+     * Examples:
+     * - 'name'
+     * - 'users.deleted_at'
+     *
+     * @param {string} [connector='AND']
+     * Logical connector:
+     * - 'AND'
+     * - 'OR'
+     *
+     * Usage:
+     * - Auto prefixes column with table name if no dot exists
+     * - Adds connector only if previous conditions exist
+     * - Checks for NULL values using IS NULL
+     *
+     * @example
+     * query.__whereNull('deleted_at');
+     * // WHERE users.deleted_at IS NULL
+     *
+     * @example
+     * query.__whereNull('email_verified_at', 'OR');
+     * // WHERE users.email_verified_at IS NULL
+     *
+     * @returns {this}
+     */
+
+    #__whereNull(col, connector = 'AND') {
+
+        const column = col.includes('.')
+            ? col
+            : `${this._table}.${col}`;
+
+        let sql = '';
+
+        if (this._wheres.length) {
+            sql += `${connector} `;
+        }
+
+        sql += `${column} IS NULL`;
+
+        this._wheres.push({
+            sql,
+            binding: []
+        });
+
+        return this;
+    }
+
+    /**
+     * Add a WHERE IS NOT NULL condition to the query.
+     *
+     * @param {string} col
+     * Column name or full column reference.
+     * Examples:
+     * - 'name'
+     * - 'users.deleted_at'
+     *
+     * @param {string} [connector='AND']
+     * Logical connector:
+     * - 'AND'
+     * - 'OR'
+     *
+     * Usage:
+     * - Auto prefixes column with table name if no dot exists
+     * - Adds connector only if previous conditions exist
+     * - Checks for non-null values using IS NOT NULL
+     *
+     * @example
+     * query.__whereNotNull('email');
+     * // WHERE users.email IS NOT NULL
+     *
+     * @example
+     * query.__whereNotNull('deleted_at', 'OR');
+     * // WHERE users.deleted_at IS NOT NULL
+     *
+     * @returns {this}
+     */
+    #__whereNotNull(col, connector = 'AND') {
+
+        const column = col.includes('.')
+            ? col
+            : `${this._table}.${col}`;
+
+        let sql = '';
+
+        if (this._wheres.length) {
+            sql += `${connector} `;
+        }
+
+        sql += `${column} IS NOT NULL`;
+
+        this._wheres.push({
+            sql,
+            binding: []
+        });
+
+        return this;
+    }
+
+    /**
+     * Add a WHERE condition using a custom SQL operator.
+     *
+     * @param {string} left
+     * Column name or full column reference.
+     * Examples:
+     * - 'age'
+     * - 'users.age'
+     *
+     * @param {string} operator
+     * SQL comparison operator.
+     * Must exist in `allowed_operators`.
+     * Examples:
+     * - '='
+     * - '>'
+     * - '<'
+     * - '>='
+     * - '<='
+     * - '!='
+     * - '<>'
+     *
+     * @param {*} value
+     * Value to bind to the query.
+     *
+     * @param {string} [connector='AND']
+     * Logical connector:
+     * - 'AND'
+     * - 'OR'
+     *
+     * @throws {Error}
+     * Throws when operator is not in allowed operators list.
+     *
+     * Usage:
+     * - Auto prefixes column with table name if no dot exists
+     * - Validates operator against allowed list
+     * - Uses parameter binding with '?'
+     *
+     * @example
+     * query.__whereOperator('age', '>', 18);
+     * // WHERE users.age > ?
+     *
+     * @example
+     * query.__whereOperator('score', '>=', 100, 'OR');
+     * // WHERE users.score >= ?
+     *
+     * @returns {this}
+     */
+    #__whereOperator( left, operator, value, connector = 'AND') {
+        
+        if (!this.allowed_operators.includes(operator)) {
+            throw new Error('Invalid operator');
+        }
+
+        const l = left.includes('.') ? left : `${this._table}.${left}`;
+        
+        let sql = '';
+
+        if (this._wheres.length) {
+            sql += `${connector} `;
+        }
+
+        
+        sql += `${l} ${operator} ?`;
+
+        this._wheres.push({ sql, binding: [value] });
+
+        return this;
+
+    }
+
+    /**
+     * Add a WHERE condition comparing two columns.
+     *
+     * @param {string} left
+     * Left column name or full column reference.
+     * Examples:
+     * - 'age'
+     * - 'users.age'
+     *
+     * @param {string} operator
+     * SQL comparison operator.
+     * Must exist in `allowed_operators`.
+     * Examples:
+     * - '='
+     * - '>'
+     * - '<'
+     * - '>='
+     * - '<='
+     * - '!='
+     * - '<>'
+     *
+     * @param {string} right
+     * Right column name or full column reference.
+     * Examples:
+     * - 'min_age'
+     * - 'users.min_age'
+     *
+     * @param {string} [connector='AND']
+     * Logical connector:
+     * - 'AND'
+     * - 'OR'
+     *
+     * @throws {Error}
+     * Throws when operator is not in allowed operators list.
+     *
+     * Usage:
+     * - Auto prefixes table name if no dot exists
+     * - Compares column against another column (no bindings used)
+     * - Validates operator against allowed list
+     *
+     * @example
+     * query.__whereColumn('age', '>=', 'min_age');
+     * // WHERE users.age >= users.min_age
+     *
+     * @example
+     * query.__whereColumn('users.age', '<', 'profiles.required_age', 'OR');
+     * // WHERE users.age < profiles.required_age
+     *
+     * @returns {this}
+     */
+    #__whereColumn(left, operator, right, connector = 'AND') {
+
+        if (!this.allowed_operators.includes(operator)) {
+            throw new Error('Invalid operator');
+        }
+
+        const l = left.includes('.') ? left : `${this._table}.${left}`;
+        const r = right.includes('.') ? right : `${this._table}.${right}`;
+        
+        let sql = '';
+
+        if (this._wheres.length) {
+            sql += `${connector} `;
+        }
+
+        
+        sql += `${l} ${operator} ${r}`;
+
+        this._wheres.push({ sql, binding: [] });
+
+        return this;
+    }
+    
+    /**
+     * Enable DISTINCT selection for the query.
+     *
+     * Usage:
+     * - Marks the query as DISTINCT
+     * - Removes duplicate rows in result set
+     *
+     * @example
+     * query.__select('name').__distinct();
+     * // SELECT DISTINCT users.name
+     *
+     * @returns {this}
+     */
+    #__distinct() {
+        this._distinct = true;
+        return this;
+    }
+
+ 
+    /**
+     * Add a JOIN clause to the query.
+     *
+     * @param {string} type
+     * JOIN type.
+     * Examples:
+     * - 'INNER'
+     * - 'LEFT'
+     * - 'RIGHT'
+     * - 'FULL'
+     *
+     * @param {string} table
+     * Table name to join.
+     *
+     * @param {Array|Object} where
+     * Join conditions.
+     * Each condition object must include:
+     * - bool: logical connector ('AND' | 'OR')
+     * - left: left column
+     * - operator: SQL operator
+     * - right: right column
+     *
+     * Usage:
+     * - Auto prefixes table name if column has no dot
+     * - Supports multiple join conditions
+     * - Builds ON clause dynamically
+     *
+     * @throws {Error}
+     * Throws when:
+     * - where is not array/object
+     * - any condition misses required keys (bool, left, operator, right)
+     *
+     * @example
+     * query.__join('INNER', 'orders', [
+     *   { bool: '', left: 'id', operator: '=', right: 'user_id' }
+     * ]);
+     * // INNER JOIN orders ON users.id = orders.user_id
+     *
+     * @example
+     * query.__join('LEFT', 'profiles', [
+     *   { bool: '', left: 'id', operator: '=', right: 'user_id' },
+     *   { bool: 'AND', left: 'status', operator: '=', right: 'active' }
+     * ]);
+     *
+     * @returns {this}
+     */
+    #__join( type, table, where ) {
+
+        this._joined_table = table;
+
+        if(!Array.isArray(where) || !where.length) {
+            
+            if( typeof where === 'object' ) {
+                where = [where];
+            } else {
+                throw new Error("The where parameter must be an array");
+            }
+        }
+
+       var isEmptyLogic = where
+            .map(x => (!x.bool || !x.left || !x.operator || !x.right))
+            .filter(x => x === true);
+
+        if (isEmptyLogic.length) {
+            throw new Error(
+                "Each object must include: bool, left, operator, right"
+            );
+        }
+
+        var where_cols = [];
+        for (let i = 0; i < where.length; i++) {
+
+            const whre = where[i]; 
+            var left_table = whre.left.indexOf('.') === -1? `${table}.${whre.left}`: whre.left;
+            var tight_table  = whre.right.indexOf('.') === -1? `${this._table}.${whre.right}`: whre.right;
+
+          //  var toPush = `${whre.bool} ${this._table}.${whre.left} ${whre.operator} ${table}.${whre.right}`;
+            var toPush = `${whre.bool} ${left_table} ${whre.operator} ${tight_table}`;
+            
+            if(!where_cols.length) {
+                //toPush = `${this._table}.${whre.left} ${whre.operator} ${table}.${whre.right}`;
+                toPush = `${left_table} ${whre.operator} ${tight_table}`;
+            }
+
+            where_cols.push(toPush);
+
+        }
+        
+        where_cols = where_cols.join(" ");
+
+        this._joins.push( `${type} JOIN ${table} ON ${where_cols}` ); 
+        
+      
+        
+        return this;
+    }
+    
+
+    /**
+     * Add an ORDER BY clause to the query.
+     *
+     * @param {string} col
+     * Column name or full column reference.
+     * Examples:
+     * - 'name'
+     * - 'users.created_at'
+     *
+     * @param {string} [dir='ASC']
+     * Sort direction.
+     * Allowed values:
+     * - 'ASC'
+     * - 'DESC'
+     *
+     * Usage:
+     * - Auto prefixes table name if no dot exists
+     * - Defaults invalid direction to 'ASC'
+     * - Supports chaining multiple order calls
+     *
+     * @example
+     * query.__order('name');
+     * // ORDER BY users.name ASC
+     *
+     * @example
+     * query.__order('created_at', 'DESC');
+     * // ORDER BY users.created_at DESC
+     *
+     * @returns {this}
+     */
+    #__order(col, dir = 'ASC') {
+
+        const direction = ['ASC', 'DESC'].includes(dir.toUpperCase())
+            ? dir.toUpperCase()
+            : 'ASC';
+
+        const column = col.includes('.')
+            ? col
+            : `${this._table}.${col}`;
+
+        this._orders.push(`${column} ${direction}`);
+
+        return this;
+    }
+    
+    /**
+     * Add GROUP BY columns to the query.
+     *
+     * @param {...string|string[]} colms
+     * Columns to group by.
+     * Examples:
+     * - 'id'
+     * - 'users.id'
+     * - ['id', 'name']
+     *
+     * Usage:
+     * - Accepts multiple arguments or arrays
+     * - Auto prefixes table name if no dot exists
+     * - Stores each column in group list
+     *
+     * @example
+     * query.__group('id');
+     * // GROUP BY users.id
+     *
+     * @example
+     * query.__group('id', 'name');
+     * // GROUP BY users.id, users.name
+     *
+     * @example
+     * query.__group(['id', 'name']);
+     * // GROUP BY users.id, users.name
+     *
+     * @returns {this}
+     */
+    #__group(...colms) {   
+
+        var cols = colms;
+        if( ! Array.isArray(colms)) {
+            cols = [colms];
+        }
+ 
+        cols.flat().forEach(col => {
+
+             const column = col.indexOf('.') !== -1
+                ? col
+                : `${this._table}.${col}`;
+                 
+            this._groups.push(`${column}`);
+
+        });
+         
+        
+        return this;
+    }
+    
+    /**
+     * Add a HAVING condition to the query.
+     *
+     * @param {string} sql
+     * HAVING condition expression.
+     * Examples:
+     * - 'COUNT(id) > ?'
+     * - 'SUM(price) > ?'
+     *
+     * @param {*} bind
+     * Value bound to the placeholder (?).
+     *
+     * @param {string} [connector='AND']
+     * Logical connector:
+     * - 'AND'
+     * - 'OR'
+     *
+     * Usage:
+     * - Adds connector only after first HAVING condition
+     * - Stores condition with parameter binding
+     * - Used after GROUP BY clauses
+     *
+     * @example
+     * query.__having('COUNT(id) > ?', 5);
+     * // HAVING COUNT(id) > ?
+     *
+     * @example
+     * query.__having('SUM(price) > ?', 100, 'OR');
+     * // HAVING SUM(price) > ?
+     *
+     * @returns {this}
+     */
+    #__having(sql, bind, connector='AND') {
+
+        var _builder = `${connector} ${sql}`;
+        if( ! this._havings.length ) {
+            _builder = `${sql}`;
+        }
+
+        this._havings.push({sql:_builder, binding: [bind]});    
+
+        return this;
+    }
+
+    /**
+     * Set LIMIT value for the query.
+     *
+     * @param {number} value
+     * Maximum number of rows to return.
+     *
+     * Usage:
+     * - Controls result size
+     * - Stored in `_limit_val`
+     *
+     * @example
+     * query.__limit(10);
+     * // LIMIT 10
+     *
+     * @returns {this}
+     */
+    #__limit(value) {
+        this._limit_val = value;
+        return this;
+    }
+
+    /**
+     * Set OFFSET value for the query.
+     *
+     * @param {number} value
+     * Number of rows to skip.
+     *
+     * Usage:
+     * - Used for pagination
+     * - Stored in `_offset_val`
+     *
+     * @example
+     * query.__offset(20);
+     * // OFFSET 20
+     *
+     * @returns {this}
+     */
+    #__offset(value) {
+        this._offset_val = value;
+        return this;
+    }
+    
+
+    /**
+     * Build SELECT clause columns for the query.
+     *
+     * Usage:
+     * - Returns selected columns joined by comma
+     * - Falls back to table wildcard if no columns exist
+     * - Used internally during SQL generation
+     *
+     * @example
+     * query._selected = ['users.id', 'users.name'];
+     * query.__build_select();
+     * // "users.id, users.name"
+     *
+     * @example
+     * query._selected = [];
+     * query.__build_select();
+     * // "users.*"
+     *
+     * @returns {string}
+     */ 
+    #__build_select(){
+        
+        if( !this._selected.length ) {
+            return `${this._table}.*`;
+        }
+
+        return this._selected.join(", ")
+
+    }
+    
+    /**
+     * Build the WHERE clause for the query.
+     *
+     * Usage:
+     * - Combines all WHERE conditions into a single SQL string
+     * - Merges all bindings into one array
+     * - Returns empty result when no conditions exist
+     *
+     * @example
+     * query._wheres = [
+     *   { sql: "users.id = ?", binding: [1] },
+     *   { sql: "AND users.age > ?", binding: [18] }
+     * ];
+     *
+     * query.__buildWhere();
+     * // { sql: " WHERE users.id = ? AND users.age > ?", binding: [1, 18] }
+     *
+     * @returns {{sql: string, binding: Array}}
+     */
+    #__buildWhere() {
+        
+        if( !this._wheres.length ) {
+            return  { sql: '', binding: [] };
+        }
+
+        var query = [];
+        var bindings = [];
+
+        for(let {sql, binding} of this._wheres) {
+            query.push(sql)
+            bindings.push(...binding) 
+        }
+
+       return {sql: ` WHERE ${query.join(" ")}`, binding: bindings}
+        
+    }
+
+    /**
+     * Build JOIN clauses for the query.
+     *
+     * Usage:
+     * - Joins all stored JOIN statements
+     * - Returns empty string when no joins exist
+     * - Used internally during SQL generation
+     *
+     * @example
+     * query._joins = [
+     *   "INNER JOIN orders ON users.id = orders.user_id",
+     *   "LEFT JOIN profiles ON users.id = profiles.user_id"
+     * ];
+     *
+     * query.__buildJoins();
+     * // " INNER JOIN orders ON users.id = orders.user_id LEFT JOIN profiles ON users.id = profiles.user_id"
+     *
+     * @returns {string}
+     */
+    #__buildJoins() {
+        if(!this._joins.length) {
+            return '';
+        }
+
+        return ` ${this._joins.join(' ')}`;
+    }
+
+    /**
+     * Build ORDER BY clause for the query.
+     *
+     * Usage:
+     * - Joins all stored ORDER BY rules
+     * - Returns empty string when no orders exist
+     * - Used internally during SQL generation
+     *
+     * @example
+     * query._orders = ["users.name ASC", "users.id DESC"];
+     *
+     * query.__buildOrders();
+     * // " ORDER BY users.name ASC, users.id DESC"
+     *
+     * @returns {string}
+     */
+    #__buildOrders() {
+        return this._orders.length  ? ' ORDER BY '  + this._orders.join(', ')  : '';
+    }
+    
+    /**
+     * Build GROUP BY clause for the query.
+     *
+     * Usage:
+     * - Joins all stored GROUP BY columns
+     * - Returns empty string when no groups exist
+     * - Used internally during SQL generation
+     *
+     * @example
+     * query._groups = ["users.id", "users.name"];
+     *
+     * query.__buildGroup();
+     * // " GROUP BY users.id, users.name"
+     *
+     * @returns {string}
+     */
+    #__buildGroup()  { 
+        return this._groups.length  ? ' GROUP BY '  + this._groups.join(', ')  : ''; 
+    }
+
+    /**
+     * Build LIMIT clause for the query.
+     *
+     * Usage:
+     * - Returns LIMIT clause with parameter binding
+     * - Returns empty result when no limit exists
+     * - Used internally during SQL generation
+     *
+     * @example
+     * query._limit_val = 10;
+     *
+     * query.__buildLimit();
+     * // { lsql: " LIMIT ?", lbind: [10] }
+     *
+     * @example
+     * query._limit_val = null;
+     *
+     * query.__buildLimit();
+     * // { lsql: "", lbind: [] }
+     *
+     * @returns {{sql: string, binding: Array}}
+     */
+    #__buildLimit()  { 
+        if( this._limit_val === null ) {
+            return {sql: '', binding: []}
+        }
+
+        return {sql: ` LIMIT ?`, binding: [this._limit_val]}
+    }
+
+    /**
+     * Build OFFSET clause for the query.
+     *
+     * Usage:
+     * - Returns OFFSET clause with parameter binding
+     * - Returns empty result when no offset exists
+     * - Used internally during SQL generation
+     *
+     * @example
+     * query._offset_val = 20;
+     *
+     * query.__buildOffset();
+     * // { osql: " OFFSET ?", obind: [20] }
+     *
+     * @example
+     * query._offset_val = null;
+     *
+     * query.__buildOffset();
+     * // { osql: "", obind: [] }
+     *
+     * @returns {{osql: string, obind: Array}}
+     */
+    #__buildOffset() { 
+
+        if( this._offset_val === null ) {
+            return {sql: '', binding: []}
+        }
+
+        return {sql: ` OFFSET ?`, binding: [this._offset_val]}
+
+    } 
+
+    /**
+     * Build HAVING clause for the query.
+     *
+     * Usage:
+     * - Combines all HAVING conditions into one SQL string
+     * - Merges all bindings into a single array
+     * - Returns empty result when no HAVING conditions exist
+     * - Used internally during SQL generation (after GROUP BY)
+     *
+     * @example
+     * query._havings = [
+     *   { sql: "COUNT(id) > ?", binding: [5] },
+     *   { sql: "AND SUM(price) > ?", binding: [100] }
+     * ];
+     *
+     * query.__buildHaving();
+     * // {
+     * //   sql: " HAVING COUNT(id) > ? AND SUM(price) > ?",
+     * //   binding: [5, 100]
+     * // }
+     *
+     * @returns {{sql: string, binding: Array}}
+     */
+    #__buildHaving() {
+        if (!this._havings.length) return { sql: '', binding: [] };
+        const parts    = [];
+        const bindings = [];
+
+        for (const {sql, binding} of this._havings) {
+            parts.push(sql);
+            bindings.push(...binding);
+        }
+
+        return { sql: ' HAVING ' + parts.join(' '), binding: bindings };
+    }
+    
+    /**
+     * Build final SELECT query with all clauses.
+     *
+     * Usage:
+     * - Combines SELECT, JOIN, WHERE, GROUP BY, HAVING, ORDER, LIMIT, OFFSET
+     * - Builds final SQL string
+     * - Merges all bindings into one array (safe parameter binding)
+     * - Applies DISTINCT when enabled
+     *
+     * Output structure:
+     * - sql: final SQL query string
+     * - binding: ordered parameter values for placeholders
+     *
+     * @example
+     * query.__select('name')
+     *      .__where('id', 1)
+     *      .__order('name')
+     *      .__limit(10)
+     *      .__build_get();
+     *
+     * // {
+     * //   sql: "SELECT users.name FROM users WHERE users.id = ? ORDER BY users.name ASC LIMIT ?",
+     * //   binding: [1, 10]
+     * // }
+     *
+     * @returns {{sql: string, binding: Array}}
+     */
+    __build_get() {
+        // binding values
+        var select = this.#__build_select();
+        var joins = this.#__buildJoins();
+        var build_where = this.#__buildWhere();
+        var groups = this.#__buildGroup();
+        var build_having = this.#__buildHaving();
+        var orderQuery = this.#__buildOrders();
+        var build_limit = this.#__buildLimit();
+        var build_offset = this.#__buildOffset();
+        
+        var distinct = this._distinct ? 'DISTINCT ' : ''; 
+        
+        var binds = [...build_where.binding, ...build_having.binding, ...build_limit.binding, ...build_offset.binding];
+        var Qsql = `SELECT ${distinct}${select} FROM ${this._table}`;
+            Qsql += joins;
+            Qsql += build_where.sql;
+            Qsql += groups;
+            Qsql += build_having.sql;
+            Qsql += orderQuery;
+            Qsql += build_limit.sql;
+            Qsql += build_offset.sql;
+
+        return {sql: Qsql, binding: binds};
+    } 
+    
+
+    // ===================================================================================
+    // ================================ Insert ===========================================
+    // ===================================================================================
+
+    /**
+     * Prepare INSERT data for the query.
+     *
+     * Usage:
+     * - Accepts object or array of objects
+     * - Filters keys using `_fillable` when defined
+     * - Builds columns, values, and placeholders
+     * - Supports bulk insert
+     *
+     * @param {Object|Object[]} _data
+     * Data to insert.
+     * Possible formats:
+     * - { name: 'John', age: 25 }
+     * - [{ name: 'John' }, { name: 'Jane' }]
+     *
+     * Behavior:
+     * - Converts single object into array
+     * - Filters keys using `_fillable` if not empty
+     * - Builds SQL column list from first item
+     * - Flattens all values for binding
+     * - Generates placeholder groups per row
+     *
+     * @throws {Error}
+     * Throws when input is not an array or object
+     *
+     * @example
+     * query.__insert({ name: 'John', age: 25 });
+     *
+     * // INSERT INTO users (name, age)
+     * // VALUES (?, ?)
+     *
+     * @example
+     * query.__insert([
+     *   { name: 'John', age: 25 },
+     *   { name: 'Jane', age: 30 }
+     * ]);
+     *
+     * // VALUES (?, ?), (?, ?)
+     *
+     * @returns {this}
+     */
+    #__insert(_data ) {
+        
+        this._type = 'insert';
+        var fillable = this._fillable;
+        var isObject = typeof _data === 'object' && _data !== null && !Array.isArray(_data); 
+        // object 
+        var data = isObject ? [_data]: _data;
+        
+        // array 
+        if( ! Array.isArray(data)) {
+            throw new Error("the data parameters should be an array");
+        }
+ 
+       var collects = data.map( x => {
+         
+            
+            var keys = fillable.length ? Object.keys(x).filter(x => fillable.includes(x)): Object.keys(x);
+            return {
+                placeholder: `(${keys.map(x => "?").join(", ")})`,
+                column: `(${keys.join(", ")})`,
+                values: keys.map(_k => x[_k])
+            }
+            
+       });       
+       
+       // Setup Columns
+       var columns = collects[0].column;
+       var values = collects.map(x => x.values).flat();
+       var placeholder = collects.map(x => x.placeholder).join(', ');
+       
+       
+       
+       
+       this._insert.push({sql: columns, binding: values, placeholders: placeholder}); 
+
+    
+       return this;
+
+    }
+
+    /**
+     * Build INSERT query for single insert operation.
+     *
+     * Usage:
+     * - Inserts one row into the table
+     * - Requires at least one insert payload
+     * - Uses parameter binding for safe execution
+     *
+     * @throws {Error}
+     * Throws when no insert data exists in `_insert`.
+     *
+     * Output structure:
+     * - sql: final INSERT SQL statement
+     * - binding: values for parameter placeholders
+     *
+     * @example
+     * query._insert = [{
+     *   sql: "(name, age)",
+     *   binding: ["John", 25],
+     *   placeholders: "(?, ?)"
+     * }];
+     *
+     * query.__build_create();
+     * // {
+     * //   sql: "INSERT INTO users (name, age) VALUES (?, ?)",
+     * //   binding: ["John", 25]
+     * // }
+     *
+     * @returns {{sql: string, binding: Array}}
+     */
+    __build_create() {
+
+        if( !this._insert.length ) {
+            throw new Error("Create or insert data into the database must contain data.")
+        }
+
+        var {sql, binding, placeholders} = this._insert[0];
+ 
+        
+        const statement = `
+            INSERT INTO ${this._table} ${sql}
+            VALUES ${placeholders}
+        `.trim();
+        
+       
+        return {sql: statement, binding: binding};
+    }
+
+
+     
+    
+
+    // ===================================================================================
+    // ================================ Update ===========================================
+    // ===================================================================================
+
+    /**
+     * Prepare UPDATE data for the query.
+     *
+     * Usage:
+     * - Accepts a plain object only
+     * - Builds SET clause with parameter binding
+     * - Stores update SQL and bindings in `_update`
+     * - Auto prefixes columns with table name when needed
+     *
+     * @param {Object} data
+     * Key-value pairs for update.
+     * Example:
+     * - { name: 'John', age: 25 }
+     *
+     * Behavior:
+     * - Rejects non-object or array input
+     * - Requires at least one column
+     * - Throws error if any value is undefined
+     * - Uses parameter binding for all values
+     *
+     * @throws {Error}
+     * Throws when:
+     * - data is invalid
+     * - data has no keys
+     * - any value is undefined
+     *
+     * @example
+     * query.__update({ name: 'John', age: 25 });
+     *
+     * // UPDATE users SET users.name = ?, users.age = ?
+     *
+     * @returns {this}
+     */
+   #__update(data) {
+
+        this._type = 'update';
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+            throw new Error('Update data must be an object');
+        }
+
+        const columns = Object.keys(data);
+
+        if (!columns.length) {
+            throw new Error('Update must have at least one column');
+        }
+
+        const setParts = [];
+        const bindings = [];
+
+        for (const col of columns) {
+            const val = data[col];
+
+            if (val === undefined) {
+                throw new Error(`Column "${col}" is undefined`);
+            }
+
+            var selected_col = col.includes('.')? col: `${this._table}.${col}`
+            setParts.push(`${selected_col} = ?`);
+            bindings.push(val);
+        }
+
+        this._update = {
+            sql: setParts.join(', '),
+            binding: bindings
+        };
+
+        return this;
+    }
+
+    /**
+     * Build UPDATE query for execution.
+     *
+     * Usage:
+     * - Combines UPDATE SET clause with WHERE clause
+     * - Uses parameter binding for safe execution
+     * - Requires `_update` to be prepared first via `__update()`
+     *
+     * Output structure:
+     * - sql: final UPDATE SQL statement
+     * - binding: ordered parameter values for placeholders
+     *
+     * Behavior:
+     * - Merges SET bindings first
+     * - Then appends WHERE bindings
+     * - Uses table name as update target
+     *
+     * @example
+     * query.__update({ name: 'John', age: 25 })
+     *      .__where('id', 1)
+     *      .__build_update();
+     *
+     * // {
+     * //   sql: "UPDATE users SET users.name = ?, users.age = ? WHERE users.id = ?",
+     * //   binding: ["John", 25, 1]
+     * // }
+     *
+     * @returns {{sql: string, binding: Array}}
+     */
+   __build_update() {
+
+        const _update_sql = this._update.sql;
+        const _update_pinding = this._update.binding;
+
+        const result = this.#__buildWhere();
+
+        const sql = `UPDATE ${this._table} SET ${_update_sql}` + result.sql;
+
+        return {
+            sql,
+            binding: [..._update_pinding, ...result.binding]
+        };
+    }
+
+    // ===================================================================================
+    // ================================ Delete ===========================================
+    // ===================================================================================
+    
+    /**
+     * Mark query as DELETE operation.
+     *
+     * Usage:
+     * - Sets internal delete state
+     * - Stores base DELETE statement for later build
+     *
+     * Behavior:
+     * - Does not execute query
+     * - Requires __build_delete() to generate final SQL
+     *
+     * @example
+     * query.__delete();
+     *
+     * // Prepares:
+     * // DELETE FROM users
+     *
+     * @returns {this}
+     */
+    #__delete(id) {
+        this._delete.push( 
+            `DELETE FROM ${this._table}` 
+        )
+        return this;
+    }
+
+    /**
+     * Build final DELETE query for execution.
+     *
+     * Usage:
+     * - Combines DELETE base, JOINs, and WHERE clause
+     * - Uses parameter binding for safe execution
+     * - Requires __delete() to be called first
+     *
+     * Output structure:
+     * - sql: final DELETE SQL statement
+     * - binding: values for WHERE placeholders
+     *
+     * Behavior:
+     * - Supports JOIN clauses
+     * - Uses first stored DELETE statement
+     * - Uses WHERE bindings only
+     *
+     * @example
+     * query.__delete()
+     *      .__where('id', 1)
+     *      .__build_delete();
+     *
+     * // {
+     * //   sql: "DELETE FROM users WHERE users.id = ?",
+     * //   binding: [1]
+     * // }
+     *
+     * @returns {{sql: string, binding: Array}}
+     */
+    __build_delete() {
+
+        var query = this._delete[0]; 
+        
+        var joins = this.#__buildJoins(); 
+        const result = this.#__buildWhere();
+        var build_limit = this.#__buildLimit();
+
+        return {    
+            sql:  query + joins + result.sql + build_limit.sql,
+            binding: result.binding
+        };
+    }    
+    
+
+    // ===================================================================================
+    // ================================ Create SQL Raw Qyery =============================
+    // ===================================================================================
+    /**
+     * Create a raw SQL fragment with bindings.
+     *
+     * Usage:
+     * - Returns raw SQL without modification
+     * - Supports parameter binding
+     * - Useful for custom or advanced queries
+     *
+     * @param {string} sql
+     * Raw SQL string.
+     *
+     * @param {Array} [bind=[]]
+     * Values for parameter placeholders (?).
+     *
+     * @example
+     * query.__raw("COUNT(*) as total", []);
+     *
+     * @example
+     * query.__raw("users.age > ?", [18]);
+     *
+     * @returns {{sql: string, binding: Array}}
+     */
+    #__raw(sql, bind = []) {
+        return {sql: sql, binding: bind};
+    }
+ 
+
+    #__reset() {
+        // Select Columns
+        this._selected = []; 
+        this._distinct = false;
+
+        this._update = [];
+        this._insert = [];
+        this._delete = [];
+        this._wheres = [];
+        
+        this._joins    = [];
+
+        this._orders   = [];
+        this._groups   = [];
+        this._havings  = []; 
+
+        this._limit_val  = null;
+        this._offset_val = null;
+        this._joined_table = null;
+
+        this._withs      = [];
+        this._with_counts = [];
+
+        this.allowed_operators = ["=", ">", "<", ">=", "<=", "<>"];
+        this._action = null;
+        this._type = null;
+        this._paginate = null;
+    }
+
+    // ===================================================================================
+    // ================================ WHERE QUERY (for Chaining)========================
+    // ===================================================================================
+
+    /**
+     * Add basic WHERE condition.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {*} value
+     * Value for comparison.
+     *
+     * @example
+     * query.where('id', 1);
+     * // WHERE users.id = ?
+     *
+     * @returns {this}
+     */
+    where(column, value) {   
+        this.#__where(column, value);
+        return this;
+    }
+
+
+    /**
+     * Add WHERE condition with custom operator.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {string} operator
+     * SQL operator (=, >, <, >=, <=, <>).
+     *
+     * @param {*} value
+     * Value for comparison.
+     *
+     * @example
+     * query.whereOp('age', '>', 18);
+     * // WHERE users.age > ?
+     *
+     * @returns {this}
+     */
+    whereOp(column, operator, value) { 
+        this.#__whereOperator(column, operator, value);
+        return this;
+    }
+
+
+    /**
+     * Compare two columns in WHERE clause.
+     *
+     * @param {string} left
+     * Left column.
+     *
+     * @param {string} right
+     * Right column.
+     *
+     * @param {string} [operator='=']
+     * SQL operator.
+     *
+     * @example
+     * query.whereOpColumns('age', 'min_age');
+     * // WHERE users.age = users.min_age
+     *
+     * @returns {this}
+     */
+    whereOpColumns( left, right, operator = '=' ) {
+        this.#__whereColumn(left, operator, right);
+        return this;
+    }
+
+
+    /**
+     * Add OR WHERE condition.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {*} value
+     * Value for comparison.
+     *
+     * @example
+     * query.where('id', 1).orWhere('age', 20);
+     *
+     * @returns {this}
+     */
+    orWhere(column, value) { 
+        this.#__whereOperator(column, '=', value, 'OR');
+        return this;
+    }
+
+    /**
+     * Add OR WHERE condition.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * * @param {string} operator
+     * Operators like =, <, <=, >, >=
+     * 
+     * @param {*} value
+     * Value for comparison.
+     *
+     * @example
+     * query.where('id', 1).orWhereOp('age', '>', 20);
+     *
+     * @returns {this}
+     */
+    orWhereOp(column, operator, value) {
+        this.#__whereOperator(column, operator, value, 'OR');
+        return this;
+    }
+
+    /**
+     * Add AND WHERE condition.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {*} value
+     * Value for comparison.
+     *
+     * Usage:
+     * - Always uses AND connector
+     * - Equivalent to where() but explicit
+     *
+     * @example
+     * query.where('id', 1).andWhere('age', 20);
+     * // WHERE users.id = ? AND users.age = ?
+     *
+     * @returns {this}
+     */
+    andWhere(column, value) {
+        this.#__whereOperator(column, '=', value, 'AND');
+        return this;
+    }
+
+    /**
+     * Add WHERE IN condition.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {Array|*|Function|QueryBuilder} values
+     * Values or subquery.
+     *
+     * Usage:
+     * - Accepts array or single value
+     * - Supports subquery via callback or QueryBuilder
+     * - Uses parameter binding
+     *
+     * @example
+     * query.whereIn('id', [1, 2, 3]);
+     * // WHERE users.id IN (?, ?, ?)
+     *
+     * @example
+     * query.whereIn('id', 1);
+     * // WHERE users.id IN (?)
+     *
+     * @returns {this}
+     */
+    whereIn(column, values) {
+        this.#__whereIn(column, values);
+        return this;
+    }
+
+    /**
+     * Add WHERE NOT IN condition.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {Array|*|Function|QueryBuilder} values
+     * Values or subquery.
+     *
+     * Usage:
+     * - Accepts array or single value
+     * - Supports subquery via callback or QueryBuilder
+     * - Uses parameter binding
+     *
+     * @example
+     * query.whereNotIn('id', [1, 2, 3]);
+     * // WHERE users.id NOT IN (?, ?, ?)
+     *
+     * @example
+     * query.whereNotIn('id', 1);
+     * // WHERE users.id NOT IN (?)
+     *
+     * @returns {this}
+     */
+    whereNotIn(column, values) {
+        this.#__whereNotIn(column, values);
+        return this;
+    }
+
+    /**
+     * Add WHERE IS NULL condition.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * Usage:
+     * - Checks for NULL values
+     * - Uses IS NULL operator
+     *
+     * @example
+     * query.whereNull('deleted_at');
+     * // WHERE users.deleted_at IS NULL
+     *
+     * @returns {this}
+     */
+    whereNull(column) {
+        this.#__whereNull(column);
+        return this;
+    }
+
+    /**
+     * Add WHERE IS NOT NULL condition.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * Usage:
+     * - Checks for non-null values
+     * - Uses IS NOT NULL operator
+     *
+     * @example
+     * query.whereNotNull('email');
+     * // WHERE users.email IS NOT NULL
+     *
+     * @returns {this}
+     */
+    whereNotNull(column) {
+        this.#__whereNotNull(column);
+        return this;
+    }
+
+    /**
+     * Add WHERE BETWEEN condition.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {*} min
+     * Minimum value.
+     *
+     * @param {*} max
+     * Maximum value.
+     *
+     * Usage:
+     * - Builds BETWEEN ? AND ? clause
+     * - Uses parameter binding
+     *
+     * @example
+     * query.whereBetween('age', 18, 30);
+     * // WHERE users.age BETWEEN ? AND ?
+     *
+     * @returns {this}
+     */
+    whereBetween(column, min, max) {
+        this.#__whereBetween(column, [min, max]);
+        return this;
+    }
+    
+    /**
+     * Add WHERE NOT BETWEEN condition.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {*} min
+     * Minimum value.
+     *
+     * @param {*} max
+     * Maximum value.
+     *
+     * Usage:
+     * - Builds NOT BETWEEN ? AND ? clause
+     * - Uses parameter binding
+     *
+     * @example
+     * query.whereNotBetween('age', 18, 30);
+     * // WHERE users.age NOT BETWEEN ? AND ?
+     *
+     * @returns {this}
+     */
+    whereNotBetween(column, min, max) {
+        this.#__whereNotBetween(column, [min, max]);
+        return this;
+    }
+
+    /**
+     * Add WHERE LIKE condition.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {string} value
+     * Search value.
+     *
+     * @param {string} [type='contains']
+     * Pattern type:
+     * - contains → %value%
+     * - starts   → value%
+     * - ends     → %value
+     *
+     * Usage:
+     * - Uses LIKE operator
+     * - Builds pattern based on type
+     * - Uses parameter binding
+     *
+     * @example
+     * query.whereLike('name', 'mon');
+     * // WHERE users.name LIKE '%mon%'
+     *
+     * @returns {this}
+     */
+    whereLike(column, value, type = 'contains') {
+        this.#__whereLike(column, value, type, 'LIKE');
+        return this;
+    }
+
+    /**
+     * Add WHERE ILIKE condition (case-insensitive).
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {string} value
+     * Search value.
+     *
+     * @param {string} [type='contains']
+     * Pattern type:
+     * - contains → %value%
+     * - starts   → value%
+     * - ends     → %value
+     *
+     * Usage:
+     * - Uses ILIKE operator (PostgreSQL only)
+     * - Builds pattern based on type
+     * - Uses parameter binding
+     *
+     * @example
+     * query.whereILike('name', 'mon');
+     * // WHERE users.name ILIKE '%mon%'
+     *
+     * @returns {this}
+     */
+    whereILike(column, value, type = 'contains') {
+        this.#__whereLike(column, value, type, 'ILIKE', );
+        return this;
+    }
+
+    /**
+     * Add raw WHERE condition.
+     *
+     * @param {string} sql
+     * Raw SQL condition.
+     *
+     * @param {Array} [bindings=[]]
+     * Values for placeholders (?).
+     *
+     * Usage:
+     * - Adds custom SQL directly to WHERE clause
+     * - Does not modify or validate SQL
+     * - Supports parameter binding
+     * - Connector must be included manually when needed
+     *
+     * @example
+     * query.whereRaw('users.age > ?', [18]);
+     * // WHERE users.age > ?
+     *
+     * @example
+     * query.where('id', 1)
+     *      .whereRaw('AND users.age > ?', [18]);
+     * // WHERE users.id = ? AND users.age > ?
+     *
+     * @returns {this}
+     */
+    whereRaw(sql, bindings = []) {
+
+        this._wheres.push(
+            {sql: sql, binding: bindings}
+        )
+
+        return this;
+    }
+
+    
+   
+    /**
+     * Enable DISTINCT selection.
+     *
+     * Usage:
+     * - Removes duplicate rows
+     * - Applies to SELECT query only
+     *
+     * @example
+     * query.select('name').distinct();
+     * // SELECT DISTINCT users.name
+     *
+     * @returns {this}
+     */
+    distinct() {
+        this.#__distinct();
+        return this;
+    }
+
+    /**
+     * Add ORDER BY clause.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {string} [direction='ASC']
+     * Sort direction (ASC or DESC).
+     *
+     * Usage:
+     * - Defaults to ASC
+     * - Invalid values fallback to ASC
+     *
+     * @example
+     * query.orderBy('created_at', 'DESC');
+     * // ORDER BY users.created_at DESC
+     *
+     * @returns {this}
+     */
+    orderBy(column, direction = 'ASC') {
+        this.#__order(column, direction);
+        return this;
+    }
+
+    /**
+     * Add ORDER BY DESC clause.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * Usage:
+     * - Shortcut for descending order
+     *
+     * @example
+     * query.orderByDesc('id');
+     * // ORDER BY users.id DESC
+     *
+     * @returns {this}
+     */
+    orderByDesc(column) {
+        this.#__order(column, 'DESC');
+        return this;
+    }
+
+    /**
+     * Add ORDER BY ASC clause.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * Usage:
+     * - Shortcut for ascending order
+     *
+     * @example
+     * query.orderByAsc('id');
+     * // ORDER BY users.id ASC
+     *
+     * @returns {this}
+     */
+    orderByAsc(column) {
+        this.#__order(column, 'ASC')
+        return this;
+    } 
+
+    /**
+     * Add GROUP BY clause.
+     *
+     * @param {string|Array} column
+     * Column or list of columns.
+     *
+     * Usage:
+     * - Accepts single column or array
+     * - Supports chaining multiple calls
+     *
+     * @example
+     * query.groupBy('user_id');
+     * // GROUP BY users.user_id
+     *
+     * @example
+     * query.groupBy(['user_id', 'status']);
+     * // GROUP BY users.user_id, users.status
+     *
+     * @returns {this}
+     */
+    groupBy(column) {
+        this.#__group(column);
+        return this;
+    } 
+
+    /**
+     * Add HAVING condition.
+     *
+     * @param {string} sql
+     * HAVING condition expression.
+     *
+     * @param {Array|*} [bindings=[]]
+     * Values for placeholders (?).
+     *
+     * Usage:
+     * - Used after GROUP BY
+     * - Supports parameter binding
+     * - Connector handled internally
+     *
+     * @example
+     * query.groupBy('user_id')
+     *      .having('COUNT(id) > ?', [5]);
+     * // HAVING COUNT(id) > ?
+     *
+     * @returns {this}
+     */
+    having(sql, bindings = []) {
+        this.#__having(sql, bindings);
+        return this;
+    }
+
+    /**
+     * Set LIMIT value.
+     *
+     * @param {number} number
+     * Maximum rows to return.
+     *
+     * Usage:
+     * - Restricts result size
+     * - Applied at end of query
+     *
+     * @example
+     * query.limit(10);
+     * // LIMIT 10
+     *
+     * @returns {this}
+     */
+    limit(number) {
+        this.#__limit(number);
+        return this;
+    }
+
+    /**
+     * Set OFFSET value.
+     *
+     * @param {number} number
+     * Rows to skip.
+     *
+     * Usage:
+     * - Used for pagination
+     * - Works with LIMIT
+     *
+     * @example
+     * query.limit(10).offset(20);
+     * // LIMIT 10 OFFSET 20
+     *
+     * @returns {this}
+     */
+    offset(number) {
+        this.#__offset(number);
+        return this;
+    }
+
+    /**
+     * Add JOIN clause.
+     *
+     * @param {string} table
+     * Table to join.
+     *
+     * @param {string} left
+     * Left column.
+     *
+     * @param {string} operator
+     * SQL operator.
+     *
+     * @param {string} right
+     * Right column.
+     *
+     * @param {string} [type='INNER']
+     * Join type.
+     *
+     * Usage:
+     * - Default join type is INNER
+     * - Builds ON condition automatically
+     *
+     * @example
+     * query.join('orders', 'orders.user_id', '=', 'users.id');
+     * // INNER JOIN orders ON orders.user_id = users.id
+     *
+     * @returns {this}
+     */
+    join(table, left, operator, right, type = 'INNER') {
+      
+        
+        this.#__join(type, table, [
+            {
+                bool: "AND",
+                left,
+                operator,
+                right
+            }
+        ]);
+
+        return this;
+    }
+
+    /**
+     * Add LEFT JOIN clause.
+     *
+     * @param {string} table
+     * Table to join.
+     *
+     * @param {string} left
+     * Left column.
+     *
+     * @param {string} operator
+     * SQL operator.
+     *
+     * @param {string} right
+     * Right column.
+     *
+     * @example
+     * query.leftJoin('orders', 'orders.user_id', '=', 'users.id');
+     * // LEFT JOIN orders ON orders.user_id = users.id
+     *
+     * @returns {this}
+     */
+    leftJoin(table, left, operator, right) {
+        this.#__join('LEFT', table, [
+            {
+                bool: "AND",
+                left,
+                operator,
+                right
+            }
+        ]);
+
+        return this;
+    }
+
+    /**
+     * Add RIGHT JOIN clause.
+     *
+     * @param {string} table
+     * Table to join.
+     *
+     * @param {string} left
+     * Left column.
+     *
+     * @param {string} operator
+     * SQL operator.
+     *
+     * @param {string} right
+     * Right column.
+     *
+     * @example
+     * query.rightJoin('orders', 'orders.user_id', '=', 'users.id');
+     * // RIGHT JOIN orders ON orders.user_id = users.id
+     *
+     * @returns {this}
+     */
+    rightJoin(table, left, operator, right) {
+        this.#__join('RIGHT', table, [
+            {
+                bool: "AND",
+                left,
+                operator,
+                right
+            }
+        ]);
+
+        return this;
+    }
+
+    /**
+     * Add INNER JOIN clause.
+     *
+     * @param {string} table
+     * Table to join.
+     *
+     * @param {string} left
+     * Left column.
+     *
+     * @param {string} operator
+     * SQL operator.
+     *
+     * @param {string} right
+     * Right column.
+     *
+     * @example
+     * query.innerJoin('orders', 'orders.user_id', '=', 'users.id');
+     *
+     * @returns {this}
+     */
+    innerJoin(table, left, operator, right) {
+        this.#__join('INNER', table, [
+            {
+                bool: "AND",
+                left,
+                operator,
+                right
+            }
+        ]);
+
+        return this;
+    }
+
+    /**
+     * Add OUTER JOIN clause.
+     *
+     * @param {string} table
+     * Table to join.
+     *
+     * @param {string} left
+     * Left column.
+     *
+     * @param {string} operator
+     * SQL operator.
+     *
+     * @param {string} right
+     * Right column.
+     *
+     * @example
+     * query.outerJoin('orders', 'orders.user_id', '=', 'users.id');
+     *
+     * @returns {this}
+     */
+    outerJoin(table, left, operator, right) {
+        this.#__join('OUTER', table, [
+            {
+                bool: "AND",
+                left,
+                operator,
+                right
+            }
+        ]);
+
+        return this;
+    }
+
+    /**
+     * Add FULL JOIN clause.
+     *
+     * @param {string} table
+     * Table to join.
+     *
+     * @param {string} left
+     * Left column.
+     *
+     * @param {string} operator
+     * SQL operator.
+     *
+     * @param {string} right
+     * Right column.
+     *
+     * @example
+     * query.fullJoin('orders', 'orders.user_id', '=', 'users.id');
+     *
+     * @returns {this}
+     */
+    fullJoin(table, left, operator, right) {
+        this.#__join('FULL', table, [
+            {
+                bool: "AND",
+                left,
+                operator,
+                right
+            }
+        ]);
+
+        return this;
+    }
+    
+    /**
+     * Join related tables using foreign key.
+     *
+     * @param {string} column
+     * Foreign key column on related table.
+     *
+     * @param {string|Array} relations
+     * Related table name or list of tables.
+     *
+     * @param {string} [type='LEFT']
+     * Join type.
+     *
+     * Usage:
+     * - Automatically builds JOIN between base table and related tables
+     * - Uses base table primary key for matching
+     * - Supports single or multiple relations
+     *
+     * @example
+     * query.with('user_id', 'orders');
+     * // LEFT JOIN orders ON orders.user_id = users.id
+     *
+     * @example
+     * query.with('user_id', ['orders', 'profiles']);
+     *
+     * @returns {this}
+     */
+    with(column, relations, type='LEFT') {
+        
+        var tables = Array.isArray(relations)? relations: [relations]; 
+        
+        tables.forEach(table => { 
+            this.join(
+                table,
+                `${table}.${column}`,
+                '=',
+                `${this._table}.${this._pk}`,
+                type
+            );
+
+        });
+
+        return this;
+    }
+    
+    /**
+     * Add subquery count for related tables.
+     *
+     * @param {string} column
+     * Foreign key column on related table.
+     *
+     * @param {string|Array} relations
+     * Related table name or list of tables.
+     *
+     * Usage:
+     * - Adds COUNT(*) subquery for each relation
+     * - Injects result into SELECT clause
+     * - Alias format: {table}_count
+     *
+     * @example
+     * query.withCount('user_id', 'orders');
+     * // SELECT ..., (SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id) AS orders_count
+     *
+     * @returns {this}
+     */
+    withCount(column, relations) {
+
+         
+        var tables = Array.isArray(relations)? relations: [relations];
+
+        tables.forEach(table => {
+            
+            var colum = `${table}.${column}`;
+            var foreign_col = `${this._table}.${this._pk}`;
+
+            var qb = new QueryBuilder(this);
+                qb._table = table;
+                qb._pk = colum;
+                qb.select('COUNT(*)')
+                qb.whereOpColumns(colum, foreign_col)
+            
+                var inSelectedSQL = `(${qb.__build_get().sql}) AS ${table}_count`;
+                this.#__select(inSelectedSQL);
+
+        });
+
+        return this;
+    }
+ 
+
+    // ─── FETCHING ─────────────────────────────────────
+    /**
+     * Prepare query to fetch all rows.
+     *
+     * Usage:
+     * - Sets SELECT *
+     * - Marks action as select
+     *
+     * @example
+     * query.find().get();
+     * // SELECT users.* FROM users
+     *
+     * @returns {this}
+     */
+    find() {
+        this._action = 'select_func';
+        this.select('*');
+        return this;
+    }
+
+    /**
+     * Find row by primary key.
+     *
+     * @param {*} id
+     * Primary key value.
+     *
+     * Usage:
+     * - Uses WHERE id = ?
+     * - Does not limit result automatically
+     *
+     * @example
+     * query.findById(1).get();
+     * // WHERE users.id = ?
+     *
+     * @returns {this}
+     */
+    findById(id) {
+        this._action = 'select_func';
+        this.select('*').where('id', id);
+        return this;
+    }
+
+    /**
+     * Find single row by primary key.
+     *
+     * @param {*} id
+     * Primary key value.
+     *
+     * Usage:
+     * - Uses WHERE id = ?
+     * - Limits result to one row
+     * - Does not throw error by default
+     *
+     * @example
+     * query.findOrFail(1).get();
+     * // LIMIT 1
+     *
+     * @returns {this}
+     */
+    findOrFail(id) {
+        this._action = 'select_func';
+        this.select('*').where('id', id).limit(1);
+        return this;
+    }
+
+    /**
+     * Find rows by a single column condition.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {*} value
+     * Value for comparison.
+     *
+     * Usage:
+     * - Adds WHERE column = ?
+     * - Uses SELECT *
+     *
+     * @example
+     * query.findBy('email', 'test@mail.com').get();
+     * // WHERE users.email = ?
+     *
+     * @returns {this}
+     */
+    findBy(column, value) {
+        this._action = 'select_func';
+        this.select('*').where(column, value);
+        return this;
+    }
+
+    /**
+     * Find one row by multiple conditions.
+     *
+     * @param {Object} conditions
+     * Key-value pairs for WHERE conditions.
+     *
+     * Usage:
+     * - Applies multiple WHERE clauses
+     * - Uses AND between conditions
+     * - Limits result to one row
+     *
+     * @example
+     * query.findOne({ name: 'John', age: 25 }).get();
+     * // WHERE users.name = ? AND users.age = ?
+     *
+     * @returns {this}
+     */
+    findOne(conditions) {
+         this._action = 'select_func';
+        if(typeof conditions != 'object') {
+            throw new Error('The conditions should be an object contains all keys => values');
+        }
+
+        var keys = Object.keys(conditions); 
+        
+        var selected = this.select('*');
+
+        keys.forEach(k => {
+            selected.where(k, conditions[k])
+        });
+        
+        selected.limit(1);
+
+        return this;
+
+    }
+
+    /**
+     * Find all records (alias-style query starter).
+     *
+     * Usage:
+     * - Sets query mode to select
+     * - Selects all columns by default
+     * - Adds a simple WHERE condition
+     *
+     * @param {string} column
+     * Column name used in WHERE clause.
+     *
+     * @param {*} value
+     * Value matched against column.
+     *
+     * @example
+     * query.findAll('status', 'active');
+     * // SELECT * FROM users WHERE users.status = ?
+     *
+     * @returns {this}
+     */
+    findAll(column, value) {
+        this._action = 'select_func';
+        this.select('*').where(column, value);
+        return this;
+    }
+
+    /**
+     * Select all records without filters.
+     *
+     * Usage:
+     * - Sets query mode to select
+     * - Returns all rows from table
+     *
+     * @example
+     * query.all();
+     * // SELECT * FROM users
+     *
+     * @returns {this}
+     */
+    all() {
+        this._action = 'select_func';
+        this.select('*');
+        return this;
+    }
+
+    /**
+     * Get first record ordered by primary key ascending.
+     *
+     * Usage:
+     * - Selects all columns
+     * - Orders by primary key ASC
+     * - Limits result to 1 row
+     *
+     * @example
+     * query.first();
+     * // SELECT * FROM users ORDER BY id ASC LIMIT 1
+     *
+     * @returns {this}
+     */
+
+    first() {
+         this._action = 'select_func';
+        this.select('*');
+        this.orderBy(this._pk, 'ASC');
+        this.limit(1);
+        return this;
+
+    }
+
+    /**
+     * Get last record ordered by primary key descending.
+     *
+     * Usage:
+     * - Selects all columns
+     * - Orders by primary key DESC
+     * - Limits result to 1 row
+     *
+     * @example
+     * query.last();
+     * // SELECT * FROM users ORDER BY id DESC LIMIT 1
+     *
+     * @returns {this}
+     */
+    last() {
+        this._action = 'select_func';
+        this.select('*');
+        this.orderBy(this._pk, 'DESC');
+        this.limit(1);
+        return this;
+
+    }
+    
+    /**
+     * Apply pagination to the query.
+     *
+     * Usage:
+     * - Sets page and per-page limit
+     * - Calculates offset automatically
+     * - Switches query mode to paging
+     * - Selects all columns by default
+     *
+     * @param {number} page
+     * Current page number (starts from 1).
+     *
+     * @param {number} perPage
+     * Number of records per page.
+     *
+     * @example
+     * query.paginate(2, 10);
+     * // SELECT * FROM users LIMIT 10 OFFSET 10
+     *
+     * @returns {this}
+     */
+    paginate(page = 1, perPage = 25) {
+        
+        this._paginate = {
+            page, perPage
+        };
+
+        const offset = (page - 1) * perPage; 
+        this.select('*');
+        this.limit(perPage);
+        this.offset(offset);
+
+        this._action = 'paging_func';
+
+
+        return this;
+
+    }
+
+    /**
+     * Select specific columns from table.
+     *
+     * Usage:
+     * - Sets query mode to select
+     * - Passes columns to internal selector
+     *
+     * @param {string|string[]} columns
+     * Columns to select.
+     *
+     * @example
+     * query.select('name');
+     * query.select(['id', 'name']);
+     *
+     * // SELECT users.name
+     *
+     * @returns {this}
+     */
+    select(columns) {
+        this._action = 'select_func';
+        this.#__select(columns);
+        return this;
+    }
+    
+    /**
+     * Count rows or column values.
+     *
+     * Usage:
+     * - Builds COUNT aggregate query
+     * - Supports alias override
+     *
+     * @param {string} column
+     * Column to count or '*'.
+     *
+     * @param {string|null} alias
+     * Optional alias name.
+     *
+     * @example
+     * query.count();
+     * // SELECT COUNT(*) AS count
+     *
+     * @example
+     * query.count('id');
+     * // SELECT COUNT(id) AS id_count
+     *
+     * @returns {this}
+     */
+    count(column = '*', alias = null) {
+        var as_variable = alias ?? (column === '*' ? 'count' : `${column}_count`);
+        this.select(`COUNT(${column}) AS ${as_variable}`);
+        return this;
+    }
+
+    /**
+     * Sum column values.
+     *
+     * Usage:
+     * - Builds SUM aggregate query
+     *
+     * @param {string} column
+     * Column to sum.
+     *
+     * @param {string|null} alias
+     * Optional alias name.
+     *
+     * @example
+     * query.sum('price');
+     * // SELECT SUM(price) AS price_sum
+     *
+     * @returns {this}
+     */
+    sum(column, alias = null) {
+        var as_variable = alias ?? (column === '*' ? 'sum' : `${column}_sum`);
+        this.select(`SUM(${column}) AS ${as_variable}`);
+        return this;
+    }
+
+    /**
+     * Calculate average value of a column.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {string|null} alias
+     * Optional alias.
+     *
+     * @example
+     * query.avg('rating');
+     * // SELECT AVG(rating) AS rating_avg
+     *
+     * @returns {this}
+     */
+    avg(column, alias = null) {
+        var as_variable = alias ?? (column === '*' ? 'avg' : `${column}_avg`);
+        this.select(`AVG(${column}) AS ${as_variable}`);
+        return this;
+    }
+
+    /**
+     * Get minimum value of a column.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {string|null} alias
+     * Optional alias.
+     *
+     * @example
+     * query.min('price');
+     * // SELECT MIN(price) AS price_min
+     *
+     * @returns {this}
+     */
+    min(column, alias = null) {
+        var as_variable = alias ?? (column === '*' ? 'min' : `${column}_min`);
+        this.select(`MIN(${column}) AS ${as_variable}`);
+        return this;
+    }
+
+    /**
+     * Get maximum value of a column.
+     *
+     * @param {string} column
+     * Column name.
+     *
+     * @param {string|null} alias
+     * Optional alias.
+     *
+     * @example
+     * query.max('price');
+     * // SELECT MAX(price) AS price_max
+     *
+     * @returns {this}
+     */
+    max(column, alias = null) {
+        var as_variable = alias ?? (column === '*' ? 'max' : `${column}_max`);
+        this.select(`MAX(${column}) AS ${as_variable}`);
+        return this;
+    } 
+
+    /**
+     * Enable bulk update mode.
+     *
+     * Usage:
+     * - Prepares multiple row updates
+     * - Uses object mapping for SET clause
+     *
+     * @param {Object} data_object
+     * Key-value pairs for update.
+     *
+     * @example
+     * query.updateMany({ status: 'active' });
+     *
+     * // UPDATE users SET users.status = ?
+     *
+     * @returns {this}
+     */
+    updateMany(data_object) {
+        this._action = 'update_many_func';
+        this.#__update(data_object);
+        return this;
+    } 
+
+   /**
+     * Insert a new record into the table.
+     *
+     * Usage:
+     * - Builds INSERT query from data object
+     * - Uses internal insert builder
+     * - Executes query via save()
+     *
+     * @param {Object|Object[]} data
+     * Data to insert into table.
+     *
+     * @example
+     * query.create({ name: 'John', age: 25 });
+     *
+     * // INSERT INTO users (name, age) VALUES (?, ?)
+     *
+     * @returns {void}
+     */
+    create(data) {
+        var statement = this.#__insert(data).__build_create();
+        this.save(statement); 
+    } 
+
+    /**
+     * Update a record by primary key.
+     *
+     * Usage:
+     * - Builds UPDATE query
+     * - Applies WHERE id condition
+     * - Executes update via save()
+     *
+     * @param {*} byId
+     * Primary key value.
+     *
+     * @param {Object} data
+     * Key-value pairs to update.
+     *
+     * @example
+     * query.update(1, { name: 'John' });
+     *
+     * // UPDATE users SET users.name = ? WHERE users.id = ?
+     *
+     * @returns {void}
+     */
+    update(byId, data) {
+        var statement = this.#__update(data).#__where('id', byId).__build_update();
+        this.save(statement); 
+    }
+    
+
+    /**
+     * Delete a single record by id.
+     *
+     * Usage:
+     * - Builds DELETE query
+     * - Adds WHERE id condition
+     * - Executes query via destroy()
+     *
+     * @param {*} id
+     * Primary key value.
+     *
+     * @example
+     * query.delete(1);
+     *
+     * // DELETE FROM users WHERE users.id = ?
+     *
+     * @returns {Promise}
+     */
+    deleteById(id) { 
+
+        this.#__delete(); 
+        this.where('id', id ); 
+        return this.execute();
+    }
+
+    deleteBy(key_value) {
+
+        if(typeof key_value !== 'object' || Array.isArray(key_value) ) {
+            throw new Error("The parameter should be an object {key: value}")
+        }
+
+        this.#__delete(); 
+        Object.keys(key_value).forEach(_key => {
+            this.where(_key, key_value[_key] ); 
+        });
+
+        return this.execute();
+
+    }
+
+    delete() {  
+        this._action = "_delete_with"
+        this.#__delete();   
+        return this;
+    } 
+    /**
+     * Delete multiple records using conditions.
+     *
+     * Usage:
+     * - Builds DELETE query
+     * - Accepts key-value conditions
+     * - Adds multiple WHERE clauses
+     *
+     * @param {Object} objet
+     * Conditions for deletion.
+     *
+     * @throws {Error}
+     * Throws when input is not an object.
+     *
+     * @example
+     * query.deleteMany({ status: 'inactive' });
+     *
+     * // DELETE FROM users WHERE users.status = ?
+     *
+     * @returns {Promise}
+     */
+    deleteMany(objet) {
+        
+        if(typeof objet !== 'object' || Array.isArray(objet)) {
+            throw new Error("The parameter should be an object");
+        }
+        this.#__delete();
+
+        Object.keys(objet).forEach(key => this.where(key, objet[key])); 
+
+        return this;
+    }  
+
+    /**
+     * Truncate table (delete all rows).
+     *
+     * Usage:
+     * - Builds DELETE query without WHERE clause
+     * - Removes all records from table
+     *
+     * @example
+     * query.truncate();
+     *
+     * // DELETE FROM users
+     *
+     * @returns {Promise}
+     */
+    truncate() {
+        this.#__delete();  
+        return this;
+    } 
+    
+    /**
+     * Execute SELECT / PAGINATION query.
+     *
+     * Usage:
+     * - Builds final SELECT query
+     * - Executes SQL via database instance
+     * - Supports pagination metadata
+     * - Resets builder state after execution
+     *
+     * Behavior:
+     * - Uses cached query if action is select or paging
+     * - Rebuilds query if not pre-built
+     * - Adds pagination info when enabled
+     *
+     * Pagination output:
+     * - records: result rows
+     * - total: total rows count
+     * - per_page: items per page
+     * - current_page: current page
+     * - last_page: last page number
+     *
+     * @param {string[]} cols
+     * Columns to select when no prior select exists.
+     *
+     * @example
+     * await query.select('*').where('id', 1).get();
+     *
+     * @example
+     * await query.paginate(1, 10).get();
+     *
+     * @returns {Promise<Object>}
+     */
+    async get(cols = ['*']) { 
+        
+       var query = (this._action === 'select_func' || this._action == 'paging_func') ? this.__build_get():  this.#__select(cols).__build_get(); 
+       var instance = this.#__run_database(); 
+        var result = await instance.query(query.sql, query.binding);
+       if( this._action == 'paging_func' ) { 
+             
+            var count_statement = query.sql
+                .replace(/LIMIT\s+\?\s+OFFSET\s+\?/i, '')
+                .replace(/SELECT\s+(.+?)\s+FROM/i, 'SELECT COUNT(*) AS count FROM');
+    
+            var counts = await instance.query(count_statement, query.binding);
+
+            if( ! counts.is_error ) {
+                var total = counts.data[0]?.count ? counts.data[0]?.count: 0;
+                var per_page = this._paginate.perPage;
+                var current_page = this._paginate.page;
+                var last_page = Math.ceil(total / per_page);
+
+
+                result.data = {
+                    records: result.data, total, per_page, current_page, last_page,
+                }
+            }
+        } 
+        this.#__reset();
+       return result;
+       
+       
+    }
+
+    /**
+     * Execute INSERT or UPDATE query.
+     *
+     * Usage:
+     * - Runs create or update statements
+     * - Supports bulk update mode
+     * - Resets builder after execution
+     *
+     * Behavior:
+     * - Uses update_many builder when needed
+     * - Otherwise uses provided statement
+     *
+     * @param {Object|null} statement
+     * Prebuilt query statement.
+     *
+     * @example
+     * await query.create({ name: 'John' });
+     *
+     * @example
+     * await query.update(1, { name: 'John' });
+     *
+     * @returns {Promise<Object>}
+     */
+    async save(statement = null) {  
+        var query = (this._action === 'update_many_func') ?  this.__build_update(): statement;
+
+        this.#__reset();
+         
+        var instance = this.#__run_database();
+        var result = await instance.query(query.sql, query.binding);
+
+        return result;
+    }
+
+    /**
+     * Execute DELETE query.
+     *
+     * Usage:
+     * - Runs delete statements
+     * - Uses WHERE conditions if exist
+     * - Resets builder after execution
+     *
+     * @param {Object} query
+     * Built delete query object.
+     *
+     * @example
+     * await query.delete(1);
+     *
+     * @returns {Promise<Object>}
+     */
+    async execute() {
+
+        
+
+        var built = this.__build_delete();         
+        
+        if(  this._action == "_delete_with" ) {
+
+            if( this._joins.length ) {
+
+                var tables = [this._table];
+
+                this._joins.forEach(statement => {
+                    const match = statement.match(/JOIN\s+([^\s]+)/i); 
+                    const table_string = match ? match[1] : null;
+                     tables.push(table_string.trim())
+                });
+                
+               built.sql = built.sql.replace("DELETE FROM", `DELETE ${tables.join(", ")} FROM`);        
+            }
+
+        }
+
+        this.#__reset();
+        var instance = this.#__run_database();
+        var result = await instance.query(built.sql, built.binding);
+        return result;
+        
+    }
+
+    /**
+     * Execute raw SQL query.
+     *
+     * Usage:
+     * - Runs custom SQL directly
+     * - Supports parameter binding
+     * - Bypasses query builder logic
+     *
+     * @param {string} sql
+     * Raw SQL string.
+     *
+     * @param {Array} bindings
+     * Values for placeholders.
+     *
+     * @example
+     * await query.raw("SELECT * FROM users WHERE id = ?", [1]);
+     *
+     * @returns {Promise<Object>}
+     */
+    async raw(sql, bindings = []) {
+        var query = this.#__raw(sql, bindings);
+
+        var instance = this.#__run_database();
+        var result = await instance.query(query.sql, query.binding);
+
+        return result;
+    } 
+    
+     
+} 
+
+
+ 
+
+
+ 
+module.exports = {QueryBuilder};

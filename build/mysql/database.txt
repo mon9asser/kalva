@@ -1,11 +1,16 @@
 'use strict';
 const mysql = require('mysql2');
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../.env') }); 
 
+require('dotenv').config({
+    path: require('path').resolve(__dirname, './../../.env'),
+    debug: true
+});
+ 
  
 
 // ─── Database ─────────────────────────────────────────────────────────────────
+ 
 
 class Database {
 
@@ -159,4 +164,5 @@ class Database {
     }
 }
 
+ 
 module.exports = { Database };

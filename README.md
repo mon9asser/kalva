@@ -1036,7 +1036,7 @@ class User extends Model {
             t.increments('id');
             t.string('name');
             t.string('email').unique();
-            t.boolean('active').defaultTo(true);
+            t.boolean('active').default(true);
             t.timestamp('deleted_at').nullable();
             t.timestamps();
         });
