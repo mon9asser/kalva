@@ -1,0 +1,26 @@
+
+var { Schema } = require("./../../database/schema");
+
+
+/**
+ * Define base columns for a table.
+ *
+ * Add an auto increment primary key column named `id`.
+ * Add timestamp columns `created_at` and `updated_at`.
+ *
+ * @param {object} table Table builder instance.
+ * @returns {void}
+ */
+function BuildColumns(table) {
+    table.increments('id'); 
+    table.timestamps();
+}
+
+async function SCHEMA_PLACEHOLDER() {
+    return await Schema.create('TABLE_PLACEHOLDER', BuildColumns);
+}
+
+module.exports = { SCHEMA_PLACEHOLDER };
+
+
+

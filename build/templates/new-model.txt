@@ -1,0 +1,12 @@
+const {Model} = require("./../../database/model");
+
+class PLACEHOLDER_MODEL_NAME extends Model {
+
+    static table = 'PLACEHOLDER_TABLE_NAME';
+    static primary_key = 'id'; 
+    static fillable   = []; 
+    query = null;
+    
+}
+
+module.exports = {PLACEHOLDER_MODEL_NAME};

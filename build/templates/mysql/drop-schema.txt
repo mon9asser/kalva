@@ -1,0 +1,12 @@
+
+
+var { Schema } = require("./../../database/schema");
+
+async function SCHEMA_PLACEHOLDER() { 
+    return await Schema.drop('TABLE_PLACEHOLDER');
+}
+
+module.exports = { SCHEMA_PLACEHOLDER };
+
+
+

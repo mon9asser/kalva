@@ -1,0 +1,6 @@
+class PLACEHOLDER_SERVICE_NAME {
+    
+
+}
+
+module.exports = { PLACEHOLDER_SERVICE_NAME };

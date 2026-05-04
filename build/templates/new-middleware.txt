@@ -1,0 +1,8 @@
+function PLACEHOLDER_MIDDLEWARE(req, res, next) { 
+    
+    // Your code here ..
+
+    next();
+}
+ 
+module.exports = {PLACEHOLDER_MIDDLEWARE};

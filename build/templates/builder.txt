@@ -1,0 +1,36 @@
+
+const chalk = require("chalk");
+const path = require('path');
+const fs = require('fs');
+
+var builder = [];
+
+(async function () {
+
+
+    // check if the files already has status before 
+    var packagejsondir = path.dirname(__dirname) + '/package.json';
+    var packageJson = JSON.parse(fs.readFileSync(packagejsondir, 'utf8' ));
+    
+    for (const instnc of builder) {
+        
+        var data_index = packageJson.kalva_data.findIndex(x => instnc.toString().includes(x.created_at.toString()) && x.status === false )
+        if( data_index !== -1 ) {
+        
+            const result = await instnc();
+
+            result.is_error
+                ? console.log(chalk.red.bold(result.message))
+                : console.log(chalk.green.bold(result.message));
+            
+                packageJson.kalva_data[data_index].status = true;
+
+            
+        } 
+    }
+
+    fs.writeFileSync(packagejsondir, JSON.stringify(packageJson,null, 2), 'utf8');
+    process.exit(0)
+    
+
+})();

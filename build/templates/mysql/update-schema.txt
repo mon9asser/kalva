@@ -1,0 +1,39 @@
+
+
+var { Schema } = require("./../../database/schema");
+
+
+/**
+ * Define base columns for a table.
+ *
+ * Add an auto increment primary key column named `id`.
+ * Add timestamp columns `created_at` and `updated_at`.
+ *
+ * @param {object} table Table builder instance.
+ * @returns {void}
+ */
+function BuildColumns(table) {
+    /*
+        FOR EXAMPLE:-
+        ----------------------------------------------------
+        table.string('phone', 20).nullable().after('email');
+        table.boolean('verified').default(0);
+
+        table.dropColumn('old_field');
+        table.renameColumn('bio', 'about');
+
+        table.modify('name').string(null, 200).notNullable();
+
+        table.addIndex('phone');
+        table.addForeign('role_id', 'roles', 'id', 'CASCADE', 'CASCADE');
+    */
+}
+
+async function SCHEMA_PLACEHOLDER() {
+    return await Schema.table('TABLE_PLACEHOLDER', BuildColumns);
+}
+
+module.exports = { SCHEMA_PLACEHOLDER };
+
+
+
