@@ -171,6 +171,10 @@ class RunTime {
 
     }
 
+    async build_scripts() {
+        this.scripts['dev'] = 'node --watch ./core/server.js'
+    }
+
     async delete_web(web_name) {
         
         var isProjectDir = this.is_project_director();
@@ -1224,7 +1228,7 @@ class RunTime {
 
         // create other dependecies
         await this.other_dependencies()
-
+        await this.build_scripts();
         // check the drive is already installed on you OS
         var isDriveExists = await this.check_database_version();
 
