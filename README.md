@@ -521,7 +521,7 @@ Every column method returns a `ColumnBuilder`. You can chain these modifiers:
 | `.generatedAs(expr, stored)` | Creates a generated/computed column |
 | `.references(table, col, onDelete, onUpdate)` | Adds a FOREIGN KEY |
 
-**Examples:**
+**For Examples:** 
 
 ```js
 // Nullable with default
