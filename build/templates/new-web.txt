@@ -1,1 +1,8 @@
-API of WEB Pages
+const express = require('express');
+const router = express.Router();
+
+router.get('/', (req, res) => {
+    res.json({ message: 'PLACEHOLDER_API_NAME Web API' });
+});
+
+module.exports = router;

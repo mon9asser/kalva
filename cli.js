@@ -237,7 +237,7 @@ class RunTime {
         }
         
         var web_template_content = fs.readFileSync(web_template, 'utf8')
-            .replaceAll('PLACEHOLDER_web_NAME', class_name);
+            .replaceAll('PLACEHOLDER_API_NAME', class_name);
         
         if( link_to_model ) {
             var required_model = `var {${name.charAt(0).toUpperCase() + name.slice(1)}Model} = require('./../models/${name}-model');\n`;
@@ -340,7 +340,7 @@ class RunTime {
         }
         
         var api_template_content = fs.readFileSync(api_template, 'utf8')
-            .replaceAll('PLACEHOLDER_api_NAME', class_name);
+            .replaceAll('PLACEHOLDER_API_NAME', class_name);
         
         if( link_to_model ) {
             var required_model = `var {${name.charAt(0).toUpperCase() + name.slice(1)}Model} = require('./../models/${name}-model');\n`;
@@ -1257,8 +1257,9 @@ class RunTime {
     }
     
     async other_dependencies() { 
-        this.dependencies['dotenv'] = "^17.4.2";
-        this.dependencies["chalk"]= "^4.1.2";
+        this.dependencies['dotenv']  = "^17.4.2";
+        this.dependencies["chalk"]   = "^4.1.2";
+        this.dependencies["express"] = "^5.2.1";
     }
     
     async create_mysql(){
@@ -1392,6 +1393,27 @@ class RunTime {
             return console.log("Something went wrong!");
         }
 
+
+        var core_folder = path.join(proj_folder, "core");
+        if(! fs.existsSync(core_folder)) {
+            fs.mkdirSync(core_folder);
+        } 
+        
+
+        var routes_folder = path.join(proj_folder, "routes");
+        if(! fs.existsSync(routes_folder)) {
+            fs.mkdirSync(routes_folder);
+        } 
+
+        var api_folder = path.join(routes_folder, "api");
+        if(!fs.existsSync(api_folder)) {
+            fs.mkdirSync(api_folder);
+        }
+
+        var web_folder = path.join(routes_folder, "web");
+        if(!fs.existsSync(web_folder)) {
+            fs.mkdirSync(web_folder);
+        }
         
         var framework_client = path.join(proj_folder, "app");
         if(! fs.existsSync(framework_client)) {
@@ -1429,40 +1451,66 @@ class RunTime {
             _from: path.join(__dirname, `build`,`templates`, `builder.txt`),
             _to: path.join(framework_client, 'builder.js')
         } 
+
+
+        var helper_temp = {
+            _from: path.join(__dirname, `build`,`templates`,`core`, `helper.txt`),
+            _to: path.join(core_folder, 'helper.js')
+        } 
+
+        var server_temp = {
+            _from: path.join(__dirname, `build`,`templates`,`core`, `server.txt`),
+            _to: path.join(core_folder, 'server.js')
+        } 
         
-        if( ! fs.existsSync(database_temp._from) || !fs.existsSync(model_temp._from) || !fs.existsSync(schema_temp._from) || !fs.existsSync(query_temp._from) || !fs.existsSync(builder_temp._from) ) {
+        if( 
+            ! fs.existsSync(database_temp._from)    || 
+            ! fs.existsSync(model_temp._from)       || 
+            ! fs.existsSync(schema_temp._from)      || 
+            ! fs.existsSync(query_temp._from)       || 
+            ! fs.existsSync(builder_temp._from)     ||
+            ! fs.existsSync(helper_temp._from)      ||
+            ! fs.existsSync(server_temp._from)     
+        ) {
             return console.log(`\n`,'🚫 ' , chalk.red.bold('Error: Template paths do not exist. Submit a ticket for this issue.'),`\n`);
         }
         
-        // builder.js
+        
         if( ! fs.existsSync(builder_temp._to) ) {
             fs.writeFileSync(
                 builder_temp._to,
                 fs.readFileSync(builder_temp._from, 'utf8')
             );
-        }
+        } 
 
-        // create model file
         fs.writeFileSync(
             model_temp._to,
             fs.readFileSync(model_temp._from, 'utf8')
         );
-
-        // create datanase
+ 
         fs.writeFileSync(
             database_temp._to, 
             fs.readFileSync(database_temp._from, 'utf8')
-        );
-        // crate schema file 
+        ); 
+
         fs.writeFileSync(
             schema_temp._to,
             fs.readFileSync(schema_temp._from, 'utf8')
         );
-
-        // crate query builder file
+ 
         fs.writeFileSync(
             query_temp._to,
             fs.readFileSync(query_temp._from, 'utf8')
+        );
+
+        fs.writeFileSync(
+            helper_temp._to,
+            fs.readFileSync(helper_temp._from, 'utf8')
+        );
+
+        fs.writeFileSync(
+            server_temp._to,
+            fs.readFileSync(server_temp._from, 'utf8')
         );
 
         
@@ -1481,6 +1529,8 @@ class RunTime {
             });
 
             console.log('\n', '🍺', chalk.green.bold("Kalva framework installed successfully!"), '\n'); 
+  
+            console.log('\n', '>>', 'Run: '+ chalk.blue.bold("npm run dev"), '\n');     
 
         } catch (error) {
             console.log('\n', chalk.red("Error: Failed to install packages:", error.message), '\n');

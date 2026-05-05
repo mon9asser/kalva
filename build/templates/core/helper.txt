@@ -1,0 +1,46 @@
+var path = require('path');
+var fs = require('fs');
+
+
+ 
+var requireRoutes = (app, folders) => {
+
+  folders.forEach( folder => {
+    
+    var _dir = path.resolve(folder.dir);
+
+    fs.readdirSync(_dir).flatMap(entry => {
+        
+        var file_path = path.join(_dir, entry);
+        is_dir = fs.statSync(file_path).isDirectory();
+
+        if( is_dir && ! file_path.endsWith(".js") ) {
+            return;
+        }
+        
+        var router = require(file_path);
+         
+        if (typeof router !== "function" && typeof router !== "object") {
+            console.warn(`[routeLoader] Skipping non-router export: ${file_path}`);
+            return;
+        }  
+
+        var relative = path.relative(_dir, file_path);  
+        var withoutExt = relative.replace(/\.js$/, "");  
+        var segments = withoutExt.split(path.sep);   
+        if (segments[segments.length - 1] === "index") {
+            segments.pop();
+        }
+        
+        var suffix = segments.length ? "/" + segments.join("/") : "";
+        var apiPath = folder.prefix + suffix || "/";
+        app.use(apiPath, router);
+
+    });
+
+  });
+  
+}
+
+
+module.exports = requireRoutes;
