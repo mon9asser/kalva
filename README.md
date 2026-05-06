@@ -16,6 +16,14 @@ Kalva is a Node.js framework for building backend applications with a structured
 
 ## Installation & Project Setup
 
+### Install the CLI on your machine
+
+Install the Kalva CLI on your machine to start new projects and manage files. This command makes the CLI available globally so you can use it from any location.
+
+```bash
+npm install kalva.js -g 
+```
+
 ### Create a New Project
 
 ```bash

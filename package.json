@@ -1,6 +1,6 @@
 {
-  "name": "kalva-framework",
-  "version": "1.0.6",
+  "name": "kalva.js",
+  "version": "1.0.1",
   "description": "Kalva is a Node.js framework for building backend applications with a simple CLI and structured architecture.",
   "main": "index.js",
   "bin": {
@@ -20,7 +20,7 @@
     "vercel",
     "kalva"
   ],
-  "author": "montasser <nexycodegmail.com>",
+  "author": "montasser <moun2030@gmail.com>",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
