@@ -1,7 +1,7 @@
 {
-  "name": "kalva.js",
+  "name": "kalvajs",
   "version": "1.0.1",
-  "description": "Kalva is a Node.js framework for building backend applications with a simple CLI and structured architecture.",
+  "description": "kalvajs is a Node.js framework for building backend applications with a simple CLI and structured architecture.",
   "main": "index.js",
   "bin": {
     "kalva": "./cli.js"
@@ -23,6 +23,14 @@
   "author": "montasser <moun2030@gmail.com>",
   "license": "ISC",
   "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mon9asser/kalva.js.git"
+  },
+  "homepage": "https://github.com/mon9asser/kalva.js",
+  "bugs": {
+    "url": "https://github.com/mon9asser/kalva.js/issues"
+  },
   "dependencies": {
     "chalk": "^4.1.2",
     "child_process": "^1.0.2",
