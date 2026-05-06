@@ -1,6 +1,6 @@
 {
   "name": "@montasser88/kalva",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "kalva is a Node.js framework for building backend applications with a simple CLI and structured architecture.",
   "main": "index.js",
   "bin": {
