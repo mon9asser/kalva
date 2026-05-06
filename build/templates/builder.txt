@@ -14,7 +14,11 @@ var builder = [];
     
     for (const instnc of builder) {
         
-        var data_index = packageJson.kalva_data.findIndex(x => instnc.toString().includes(x.created_at.toString()) && x.status === false )
+        var data_index = packageJson.kalva_data.findIndex(x => {
+            var slugNumber = x.name.split('-')[0].trim(); 
+            return instnc.toString().includes(slugNumber) && x.status === false ;
+        });
+
         if( data_index !== -1 ) {
         
             const result = await instnc();
@@ -26,7 +30,7 @@ var builder = [];
                 packageJson.kalva_data[data_index].status = true;
 
             
-        } 
+        }
     }
 
     fs.writeFileSync(packagejsondir, JSON.stringify(packageJson,null, 2), 'utf8');
